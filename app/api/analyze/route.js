@@ -19,15 +19,19 @@ export async function POST(request) {
     });
 
     const promptText = `
-    You are an expert diagnostic radiologist. Analyze the provided radiological image. The user has enhanced and segmented this image to highlight a tumor mass with a green contour outline and pink fill overlay.
+    You are an expert diagnostic radiologist. Analyze the provided radiological image.
+    If the image has a green contour and pink overlay, that is the user's manual segmentation of the tumor. 
+    If it is a raw medical scan (no overlays), you must carefully locate the suspicious mass yourself.
     
-    The user's workstation extracted the following geometric data from the highlighted mass:
+    The user's workstation extracted the following geometric data from the target mass:
     - Estimated Mass Size: ${features?.size || 0} pixels
-    - Edge Irregularity Score: ${features?.irregularity || 1.0} (A score of 1.0 indicates a perfectly smooth, circular border. Significantly higher scores indicate a spiculated, jagged, or highly irregular margin).
+    - Edge Irregularity Score: ${features?.irregularity || 1.0} (1.0 = smooth border. Higher scores indicate spiculated/jagged margins).
     
-    Identify the suspicious region in the image and return its bounding box coordinates normalized from 0 to 1000 ([ymin, xmin, ymax, xmax]).
+    Identify the suspicious region in the image and return its bounding box coordinates accurately normalized from 0 to 1000 ([ymin, xmin, ymax, xmax]), where 0,0 is the top-left and 1000,1000 is the bottom-right.
     
     Using BOTH the visual appearance of the image and the extracted geometric features above, classify the primary mass as either "Benign" or "Malignant".
+    
+    CRITICAL INSTRUCTION: The "description" field MUST be written in Thai language (ภาษาไทย) and should clearly explain why it is classified as such. All other JSON keys MUST be exactly as specified in English.
     
     Return the response as valid JSON ONLY, using this schema:
     {

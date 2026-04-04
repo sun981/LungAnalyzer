@@ -22,6 +22,9 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
   const [isDrawing, setIsDrawing] = useState(false);
   const [roi, setRoi] = useState(null); // {x, y, width, height}
   const [startPos, setStartPos] = useState({x: 0, y: 0});
+  
+  // Send Option State
+  const [sendOriginal, setSendOriginal] = useState(false);
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -251,8 +254,19 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
 
   const triggerAnalyze = () => {
     if (canvasRef.current) {
-      // Get base64 string directly from processed canvas to send to AI
-      const dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.9);
+      let dataUrl = "";
+      // If user wants to send the original, draw baseImageRef to temp canvas and get base64
+      if (sendOriginal && baseImageRef.current) {
+         const tempCanvas = document.createElement("canvas");
+         tempCanvas.width = baseImageRef.current.width;
+         tempCanvas.height = baseImageRef.current.height;
+         const ctx = tempCanvas.getContext("2d");
+         ctx.drawImage(baseImageRef.current, 0, 0);
+         dataUrl = tempCanvas.toDataURL("image/jpeg", 0.9);
+      } else {
+         dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.9);
+      }
+      
       onAnalyze({
          imageBase64: dataUrl.split(",")[1], // strip data prefix
          mimeType: "image/jpeg",
@@ -350,6 +364,12 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
               </div>
             </div>
 
+            <div style={{ marginTop: "1rem", marginBottom: "0.5rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+               <input type="checkbox" id="sendOrig" checked={sendOriginal} onChange={e => setSendOriginal(e.target.checked)} />
+               <label htmlFor="sendOrig" style={{ cursor: "pointer", fontSize: "0.9rem" }}>
+                  ส่งภาพเต็มรูปต้นฉบับ (Send original unmarked image)
+               </label>
+            </div>
             <button className={styles.analyzeBtn} onClick={triggerAnalyze} disabled={isLoading}>
               {isLoading ? "Classifying..." : "AI Classify (Benign / Malignant)"}
             </button>
