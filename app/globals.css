@@ -4,25 +4,25 @@
 
 @layer base {
   :root {
-    --background: theme('colors.slate.50');
-    --foreground: theme('colors.slate.900');
-    --card: theme('colors.white');
-    --card-border: theme('colors.slate.200');
-    --accent: theme('colors.indigo.600');
-    --pane-bg: theme('colors.slate.100/80');
-    --text-muted: theme('colors.slate.500');
-    --radial-bg-1: rgba(99, 102, 241, 0.05);
-    --radial-bg-2: rgba(139, 92, 246, 0.03);
+    --background: #f8fafc; /* Slate 50 */
+    --foreground: #0f172a; /* Slate 900 */
+    --card: #ffffff;
+    --card-border: #e2e8f0; /* Slate 200 */
+    --accent: #4f46e5; /* Indigo 600 */
+    --pane-bg: rgba(255, 255, 255, 0.7);
+    --text-muted: #64748b; /* Slate 500 */
+    --radial-bg-1: rgba(99, 102, 241, 0.08);
+    --radial-bg-2: rgba(52, 211, 153, 0.05);
   }
 
   .dark {
     --background: #020617;
     --foreground: #f8fafc;
     --card: #0f172a;
-    --card-border: rgba(30, 41, 59, 0.5);
+    --card-border: rgba(30, 41, 59, 0.6);
     --accent: #6366f1;
     --pane-bg: rgba(15, 23, 42, 0.6);
-    --text-muted: theme('colors.slate.400');
+    --text-muted: #94a3b8; /* Slate 400 */
     --radial-bg-1: rgba(99, 102, 241, 0.15);
     --radial-bg-2: rgba(139, 92, 246, 0.1);
   }
@@ -31,45 +31,68 @@
 body {
   background-color: var(--background);
   color: var(--foreground);
-  @apply antialiased transition-colors duration-500;
+  @apply antialiased transition-colors duration-700 selection:bg-indigo-500/30;
+  
+  /* Modern Grid Background */
   background-image: 
+    linear-gradient(var(--card-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--card-border) 1px, transparent 1px),
     radial-gradient(at 0% 0%, var(--radial-bg-1) 0px, transparent 50%),
     radial-gradient(at 100% 0%, var(--radial-bg-2) 0px, transparent 50%);
+  background-size: 40px 40px, 40px 40px, 100% 100%, 100% 100%;
+  background-position: center center;
   min-height: 100vh;
 }
 
-/* Glassmorphism utility */
+/* Glassmorphism utility with better shadows */
 .glass {
   background-color: var(--pane-bg);
-  @apply backdrop-blur-md border border-slate-200/50 dark:border-slate-800/60;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  @apply backdrop-blur-xl border border-white/20 dark:border-white/5;
 }
 
 .card-main {
   background-color: var(--card);
   border: 1px solid var(--card-border);
-  @apply rounded-3xl shadow-xl dark:shadow-2xl transition-all;
+  @apply rounded-[2.5rem] shadow-2xl shadow-indigo-500/5 dark:shadow-indigo-500/[0.02] transition-all;
 }
 
 .gradient-text {
-  @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500;
+  @apply bg-clip-text text-transparent bg-gradient-to-br from-indigo-500 via-violet-500 to-emerald-500;
 }
 
-/* Custom range input styling */
+/* Premium Buttons */
+.btn-premium {
+  @apply relative overflow-hidden px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-xl;
+}
+
+/* Custom range input styling - Medical look */
 input[type='range'] {
-  @apply h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer;
+  @apply h-1 bg-slate-200 dark:bg-slate-800 rounded-full appearance-none cursor-pointer;
 }
 
 input[type='range']::-webkit-slider-thumb {
-  @apply appearance-none w-4 h-4 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all hover:scale-110;
+  @apply appearance-none w-5 h-5 rounded-full bg-white border-2 border-indigo-500 shadow-xl transition-all hover:scale-125;
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
 }
 ::-webkit-scrollbar-track {
-  background-color: var(--background);
+  background-color: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-400 dark:bg-slate-800 rounded-full border-2 border-transparent hover:bg-slate-500 dark:hover:bg-slate-700;
+  @apply bg-slate-300 dark:bg-slate-800 rounded-full border-4 border-transparent bg-clip-content hover:bg-slate-400 dark:hover:bg-slate-700;
+}
+
+/* Animations */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
 }
