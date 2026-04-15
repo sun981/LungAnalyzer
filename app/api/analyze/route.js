@@ -1,79 +1,88 @@
-import { GoogleGenAI } from '@google/genai';
-import { NextResponse } from 'next/server';
-
 export async function POST(request) {
   try {
-    const payload = await request.json();
-    const { imageBase64, mimeType, features } = payload;
+    const { image, featureData } = await request.json();
 
-    if (!imageBase64) {
-      return NextResponse.json({ error: "No image provided" }, { status: 400 });
+    if (!image) {
+      return Response.json({ error: 'No image provided' }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: "GEMINI_API_KEY is not configured in .env.local" }, { status: 500 });
+    // Prepare features string
+    let featureText = '';
+    if (featureData) {
+      featureText = `
+ฟีเจอร์ทางคณิตศาสตร์จากระบบ Local Model:
+- ขนาด (Area): ${featureData.area} px^2
+- ความกลม (Circularity): ${parseFloat(featureData.circularity).toFixed(3)} (0-1 ยิ่งน้อยยิ่งขรุขระ เสี่ยงสูง)
+- ความทึบ (Mean Density): ${parseFloat(featureData.meanDensity).toFixed(1)} intensity
+- ความไม่สม่ำเสมอของเนื้อ (Heterogeneity/StdDev): ${parseFloat(featureData.stdDev).toFixed(2)} (ยิ่งสูงยิ่งเสี่ยง)
+- โอกาสเป็นเนื้อร้ายจาก Local Logistic Regression: ${featureData.localProbability}%
+      `;
     }
 
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY
-    });
+    // Call Gemini API
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: `
+คุณคือแพทย์รังสีแพทย์ผู้เชี่ยวชาญด้านมะเร็งปอด
+จงวิเคราะห์ภาพ CT Scan ของก้อนเนื้อในปอด (Lung Nodule) ที่อาจมีการ Mask สีไว้ โดยพิจารณาจากภาพและข้อมูลทางคณิตศาสตร์ด้านล่างนี้:
+${featureText}
 
-    const promptText = `
-    You are an expert diagnostic radiologist. Analyze the provided radiological image.
-    If the image has a green contour and pink overlay, that is the user's manual segmentation of the tumor. 
-    If it is a raw medical scan (no overlays), you must carefully locate the suspicious mass yourself.
-    
-    The user's workstation extracted the following geometric data from the target mass:
-    - Estimated Mass Size: ${features?.size || 0} pixels
-    - Edge Irregularity Score: ${features?.irregularity || 1.0} (1.0 = smooth border. Higher scores indicate spiculated/jagged margins).
-    
-    Identify the suspicious region in the image and return its bounding box coordinates accurately normalized from 0 to 1000 ([ymin, xmin, ymax, xmax]), where 0,0 is the top-left and 1000,1000 is the bottom-right.
-    
-    Using BOTH the visual appearance of the image and the extracted geometric features above, classify the primary mass as either "Benign" or "Malignant".
-    
-    CRITICAL INSTRUCTION: The "description" field MUST be written in Thai language (ภาษาไทย) and should clearly explain why it is classified as such. All other JSON keys MUST be exactly as specified in English.
-    
-    Return the response as valid JSON ONLY, using this schema:
-    {
-      "classifications": [
-        {
-          "label": "string (MUST be either 'Benign' or 'Malignant' or 'Inconclusive')",
-          "probability": number (0-100 percentage integer representing confidence),
-          "description": "string (Detailed explanation of the diagnosis based on visual features and the provided Edge Irregularity score)",
-          "boundingBox": {
-            "ymin": number (0 to 1000),
-            "xmin": number (0 to 1000),
-            "ymax": number (0 to 1000),
-            "xmax": number (0 to 1000)
+ข้อมูลสำคัญ: 
+- คุณต้องตอบกลับมาในรูปแบบ JSON ตาม Schema ที่กำหนดเท่านั้น
+- ค่า classification อาจะตอบเป็นแค่ "Benign" หรือ "Malignant"
+- คำอธิบายการวินิจฉัย (description) ต้องเป็น "ภาษาไทย" ล้วน และอธิบายถึงความเสี่ยงจากรูปทรงและความทึบ
+- ค่า boundingBox จะเป็นพิกัด [ymin, xmin, ymax, xmax] ระหว่าง 0-1 ที่บอกตำแหน่งก้อนเนื้อ
+            ` },
+            { inline_data: { mime_type: "image/jpeg", data: image } }
+          ]
+        }],
+        generationConfig: {
+          response_mime_type: "application/json",
+          response_schema: {
+            type: "OBJECT",
+            properties: {
+              classification: {
+                type: "STRING",
+                description: "The classification: 'Benign' or 'Malignant'"
+              },
+              description: {
+                type: "STRING",
+                description: "Detailed description of the diagnosis in Thai language"
+              },
+              boundingBox: {
+                type: "ARRAY",
+                items: { type: "NUMBER" },
+                description: "The [ymin, xmin, ymax, xmax] coordinates of the tumor mapped 0 to 1"
+              }
+            },
+            required: ["classification", "description", "boundingBox"]
           }
         }
-      ]
-    }
-    
-    You may include secondary differential diagnoses as additional objects in the array if the image is ambiguous.
-    Do not include markdown blocks like \`\`\`json.
-    `;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        { role: 'user', parts: [
-            { text: promptText },
-            { inlineData: { data: imageBase64, mimeType: mimeType || 'image/jpeg' } }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: 'application/json'
-      }
+      })
     });
 
-    const jsonText = response.text;
-    const data = JSON.parse(jsonText);
+    if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.statusText}`);
+    }
 
-    return NextResponse.json(data);
+    const data = await response.json();
+    let resultJson = {};
+
+    if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
+        resultJson = JSON.parse(data.candidates[0].content.parts[0].text);
+    } else {
+        throw new Error("Invalid response format from Gemini");
+    }
+
+    return Response.json(resultJson);
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    return NextResponse.json({ error: error.message || "Failed to process image/data" }, { status: 500 });
+    console.error('Analysis error:', error);
+    return Response.json({ error: error.message }, { status: 500 });
   }
 }

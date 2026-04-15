@@ -1,68 +1,75 @@
-:root {
-  --bg-color: #f0f4f8; /* Soft light background */
-  --surface-color: #ffffff;
-  --text-main: #2c3e50;
-  --text-title: #1a252f;
-  --text-muted: #7f8c8d;
-  --primary: #3498db; /* Clinical blue */
-  --primary-hover: #2980b9;
-  --success: #2ecc71; /* Safe green */
-  --warning: #f39c12;
-  --danger: #e74c3c;
-  --border-color: #dbe4eb;
-  --radius: 16px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
-  --shadow-hover: 0 15px 40px rgba(0, 0, 0, 0.08);
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: theme('colors.slate.50');
+    --foreground: theme('colors.slate.900');
+    --card: theme('colors.white');
+    --card-border: theme('colors.slate.200');
+    --accent: theme('colors.indigo.600');
+    --pane-bg: theme('colors.slate.100/80');
+    --text-muted: theme('colors.slate.500');
+    --radial-bg-1: rgba(99, 102, 241, 0.05);
+    --radial-bg-2: rgba(139, 92, 246, 0.03);
+  }
+
+  .dark {
+    --background: #020617;
+    --foreground: #f8fafc;
+    --card: #0f172a;
+    --card-border: rgba(30, 41, 59, 0.5);
+    --accent: #6366f1;
+    --pane-bg: rgba(15, 23, 42, 0.6);
+    --text-muted: theme('colors.slate.400');
+    --radial-bg-1: rgba(99, 102, 241, 0.15);
+    --radial-bg-2: rgba(139, 92, 246, 0.1);
+  }
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-html, body {
-  max-width: 100vw;
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  @apply antialiased transition-colors duration-500;
+  background-image: 
+    radial-gradient(at 0% 0%, var(--radial-bg-1) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, var(--radial-bg-2) 0px, transparent 50%);
   min-height: 100vh;
-  overflow-x: hidden;
-  font-family: var(--font-inter), -apple-system, sans-serif;
-  background-color: var(--bg-color);
-  color: var(--text-main);
-  line-height: 1.6;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* Glassmorphism utility */
+.glass {
+  background-color: var(--pane-bg);
+  @apply backdrop-blur-md border border-slate-200/50 dark:border-slate-800/60;
 }
 
-button {
-  cursor: pointer;
-  font-family: inherit;
-  border: none;
-  outline: none;
+.card-main {
+  background-color: var(--card);
+  border: 1px solid var(--card-border);
+  @apply rounded-3xl shadow-xl dark:shadow-2xl transition-all;
 }
 
-/* Medical pattern background */
-body::before {
-  content: "";
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-image: radial-gradient(#dbe4eb 1px, transparent 1px);
-  background-size: 20px 20px;
-  opacity: 0.5;
-  z-index: -1;
-  pointer-events: none;
+.gradient-text {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500;
 }
 
-.disclaimer {
-  text-align: center;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  max-width: 800px;
-  margin: 2rem auto;
-  padding: 1rem;
-  background: rgba(255,255,255,0.6);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
+/* Custom range input styling */
+input[type='range'] {
+  @apply h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  @apply appearance-none w-4 h-4 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all hover:scale-110;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background-color: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-400 dark:bg-slate-800 rounded-full border-2 border-transparent hover:bg-slate-500 dark:hover:bg-slate-700;
 }
