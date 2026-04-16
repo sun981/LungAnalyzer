@@ -10,6 +10,8 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
   const [tolerance, setTolerance] = useState(30);
   const [erosion, setErosion] = useState(0);
   const [dilation, setDilation] = useState(0);
+  const [opening, setOpening] = useState(0);
+  const [closing, setClosing] = useState(0);
   const [showOverlay, setShowOverlay] = useState(true);
   const [currentMode, setCurrentMode] = useState('DRAW'); 
   const [radiomics, setRadiomics] = useState(null);
@@ -172,6 +174,11 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
     };
     for(let i=0; i<erosion; i++) mask=morph(mask, 'erode');
     for(let i=0; i<dilation; i++) mask=morph(mask, 'dilate');
+    // Opening
+    for(let j=0; j<opening; j++) { mask = morph(mask, 'erode'); mask = morph(mask, 'dilate'); }
+    // Closing
+    for(let j=0; j<closing; j++) { mask = morph(mask, 'dilate'); mask = morph(mask, 'erode'); }
+
     const ctx = canvasResultRef.current.getContext('2d'), resImg = ctx.createImageData(w, h);
     for(let i=0; i<mask.length; i++) {
         const p=i*4;
@@ -195,150 +202,165 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
           circ = (perimeter > 0) ? Math.min(1, (4*Math.PI*area)/(perimeter**2)) : 0, 
           z = -4.5 + (area/1000)*1.8 + (1-circ)*3.5 + (std/30)*1.5;
     setRadiomics({ area, circularity: circ, meanDensity: mean, stdDev: std, localProbability: (100/(1+Math.exp(-z))).toFixed(1) });
-  }, [isImageLoaded, tolerance, erosion, dilation, showOverlay]);
+  }, [isImageLoaded, tolerance, erosion, dilation, opening, closing, showOverlay]);
 
   useEffect(() => { if(seedPoints.current.length) processSegmentation(); }, [processSegmentation]);
 
   const handleDeepAnalyze = () => onAnalyze({ image: canvasResultRef.current.toDataURL("image/jpeg").split(",")[1], featureData: radiomics });
 
-  const commonCardClass = "glass p-8 rounded-[2.5rem] space-y-8 dark:border-white/5 transition-all duration-700 shadow-2xl";
+  const commonCardClass = "glass p-6 rounded-2xl flex flex-col gap-4 shadow-sm";
 
   return (
     <div className="w-full text-slate-800 dark:text-slate-200 transition-colors duration-700">
-      <main className="grid grid-cols-1 md:grid-cols-12 gap-12">
+      <main className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
         
         {/* Left Sidebar: Orchestration */}
-        <div className="md:col-span-4 space-y-12">
+        <div className="md:col-span-4 flex flex-col gap-8 min-w-0">
             <div className={commonCardClass}>
-                <header className="flex items-center gap-3">
-                    <div className="w-2.5 h-6 bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
-                    <h2 className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.3em]">Module 01: Capture</h2>
+                <header className="flex items-center gap-3 mb-2">
+                    <div className="w-2.5 h-6 bg-[var(--accent)] rounded-full"></div>
+                    <h2 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Module 01: Capture</h2>
                 </header>
                 <div className="group relative">
-                  <input onChange={handleImageUpload} type="file" className="block w-full text-xs text-slate-500 file:mr-4 file:py-4 file:px-8 file:rounded-2xl file:border-0 file:text-[10px] file:font-black file:uppercase file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer shadow-xl transition-all active:scale-95" accept="image/*" />
+                  <input onChange={handleImageUpload} type="file" className="block w-full text-xs text-[var(--foreground)] file:mr-4 file:py-3 file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:uppercase file:bg-[var(--accent)] file:text-white hover:file:opacity-90 cursor-pointer shadow-sm transition-all" accept="image/*" />
                 </div>
             </div>
 
             <div className={commonCardClass}>
-                <header className="flex justify-between items-center">
+                <header className="flex justify-between items-center mb-2">
                     <div className="flex items-center gap-3">
-                        <div className="w-2.5 h-6 bg-violet-600 rounded-full shadow-[0_0_10px_rgba(139,92,246,0.5)]"></div>
-                        <h2 className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.3em]">Module 02: Optic Filters</h2>
+                        <div className="w-2.5 h-6 bg-[var(--accent)] rounded-full"></div>
+                        <h2 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Module 02: Enhancement</h2>
                     </div>
-                    <button onClick={() => { setBrightness(0); setContrast(0); }} className="text-[10px] font-black text-indigo-500 uppercase tracking-tighter hover:scale-110 transition-transform">Reset Matrix</button>
+                    <button onClick={() => { setBrightness(0); setContrast(0); }} className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-wider hover:underline">Reset</button>
                 </header>
-                <div className="space-y-8">
-                    <div className="space-y-4">
-                        <div className="flex justify-between text-[11px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest transition-colors"><span>Intensity</span><span className="text-indigo-500">{brightness}</span></div>
+                <div className="space-y-6">
+                    <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]"><span>Intensity</span><span className="text-[var(--accent)]">{brightness}</span></div>
                         <input type="range" min="-100" max="100" value={brightness} onChange={(e) => setBrightness(Number(e.target.value))} className="w-full" />
                     </div>
-                    <div className="space-y-4">
-                        <div className="flex justify-between text-[11px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest transition-colors"><span>Dynamic Range</span><span className="text-indigo-500">{contrast}</span></div>
+                    <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]"><span>Dynamic Range</span><span className="text-[var(--accent)]">{contrast}</span></div>
                         <input type="range" min="-100" max="100" value={contrast} onChange={(e) => setContrast(Number(e.target.value))} className="w-full" />
                     </div>
                 </div>
             </div>
 
             <div className={commonCardClass}>
-                <header className="flex items-center gap-3">
-                    <div className="w-2.5 h-6 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
-                    <h2 className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.3em]">Module 03: Isolation</h2>
+                <header className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-2.5 h-6 bg-[var(--accent)] rounded-full"></div>
+                        <h2 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Module 03: Segmentation</h2>
+                    </div>
                 </header>
                 <div className="space-y-6">
                     <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => setCurrentMode('DRAW')} className={`p-4 rounded-3xl border-2 transition-all font-black text-[10px] uppercase tracking-tighter ${currentMode === 'DRAW' ? 'bg-indigo-600 text-white border-indigo-600 shadow-xl scale-105' : 'bg-slate-100 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-400'}`}>1. Vector ROI</button>
-                        <button onClick={() => setCurrentMode('SEED')} className={`p-4 rounded-3xl border-2 transition-all font-black text-[10px] uppercase tracking-tighter ${currentMode === 'SEED' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xl scale-105' : 'bg-slate-100 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-400'}`}>2. Seed Pulse</button>
+                        <button onClick={() => setCurrentMode('DRAW')} className={`p-4 rounded-xl border transition-all font-bold text-[10px] uppercase tracking-wider ${currentMode === 'DRAW' ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-md scale-105' : 'bg-transparent border-[var(--card-border)] text-[var(--foreground)] hover:bg-[var(--surface)]'}`}>1. Vector ROI</button>
+                        <button onClick={() => setCurrentMode('SEED')} className={`p-4 rounded-xl border transition-all font-bold text-[10px] uppercase tracking-wider ${currentMode === 'SEED' ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-md scale-105' : 'bg-transparent border-[var(--card-border)] text-[var(--foreground)] hover:bg-[var(--surface)]'}`}>2. Seed Pulse</button>
                     </div>
-                    <div className="space-y-4">
-                        <div className="flex justify-between text-[11px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest"><span>Spatial Sensitivity</span><span className="text-emerald-500 font-black">{tolerance}</span></div>
-                        <input type="range" min="5" max="100" value={tolerance} onChange={e=>setTolerance(Number(e.target.value))} className="w-full accent-emerald-500" />
+                    <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]"><span>Spatial Sensitivity</span><span className="text-[var(--accent)]">{tolerance}</span></div>
+                        <input type="range" min="5" max="100" value={tolerance} onChange={e=>setTolerance(Number(e.target.value))} className="w-full" />
                     </div>
-                    <div className="flex gap-4 pt-4 border-t border-slate-200 dark:border-slate-800 transition-colors">
-                        <button onClick={() => setShowOverlay(!showOverlay)} className={`flex-1 py-4 rounded-2xl font-black text-[9px] uppercase tracking-[0.2em] transition-all ${showOverlay ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 underline decoration-dotted decoration-2 underline-offset-4'}`}>{showOverlay ? "Active Overlay" : "Wireframe Mode"}</button>
-                        <button onClick={() => {roiPoints.current=[]; seedPoints.current=[]; setRadiomics(null); setCurrentMode('DRAW'); redrawOriginalCanvas();}} className="flex-1 py-4 rounded-2xl bg-red-600 text-white font-black text-[9px] uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all">Format Buffer</button>
+                    
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-4 pt-4 border-t border-[var(--card-border)]">
+                        <div className="space-y-2">
+                           <div className="flex justify-between text-[9px] font-bold uppercase text-[var(--text-muted)]"><span>Erosion</span><span>{erosion}</span></div>
+                           <input type="range" min="0" max="10" value={erosion} onChange={e=>setErosion(Number(e.target.value))} className="w-full" />
+                        </div>
+                        <div className="space-y-2">
+                           <div className="flex justify-between text-[9px] font-bold uppercase text-[var(--text-muted)]"><span>Dilation</span><span>{dilation}</span></div>
+                           <input type="range" min="0" max="10" value={dilation} onChange={e=>setDilation(Number(e.target.value))} className="w-full" />
+                        </div>
+                        <div className="space-y-2">
+                           <div className="flex justify-between text-[9px] font-bold uppercase text-[var(--text-muted)]"><span>Opening</span><span>{opening}</span></div>
+                           <input type="range" min="0" max="5" value={opening} onChange={e=>setOpening(Number(e.target.value))} className="w-full" />
+                        </div>
+                        <div className="space-y-2">
+                           <div className="flex justify-between text-[9px] font-bold uppercase text-[var(--text-muted)]"><span>Closing</span><span>{closing}</span></div>
+                           <input type="range" min="0" max="5" value={closing} onChange={e=>setClosing(Number(e.target.value))} className="w-full" />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 pt-4 border-t border-[var(--card-border)]">
+                        <button onClick={() => { if (seedPoints.current.length > 0) { seedPoints.current.pop(); processSegmentation(); redrawOriginalCanvas(); } }} disabled={seedPoints.current.length===0} className="flex-1 min-w-[30%] py-3 rounded-xl border border-[var(--card-border)] font-bold text-[9px] uppercase tracking-widest hover:bg-[var(--card-border)] disabled:opacity-30">Undo Seed</button>
+                        <button onClick={() => {roiPoints.current=[]; seedPoints.current=[]; setRadiomics(null); setCurrentMode('DRAW'); redrawOriginalCanvas();}} className="flex-1 min-w-[30%] py-3 rounded-xl border border-[var(--danger-text)] text-[var(--danger-text)] font-bold text-[9px] uppercase tracking-widest hover:bg-[var(--danger-bg)]">Reset ROI</button>
+                        <button onClick={() => setShowOverlay(!showOverlay)} className="w-full py-3 rounded-xl bg-[var(--accent)] text-white font-bold text-[9px] uppercase tracking-widest hover:opacity-90">{showOverlay ? "Active Overlay" : "Wireframe Mode"}</button>
                     </div>
                 </div>
             </div>
         </div>
 
         {/* Center / Workspace Columns */}
-        <div className="md:col-span-8 flex flex-col gap-12">
-            <div className="card-main p-10 shadow-indigo-500/10 dark:shadow-none transition-all duration-700">
-                <header className="flex justify-between items-center mb-8">
+        <div className="md:col-span-8 flex flex-col gap-8 min-w-0">
+            
+            {/* Split Screen Workspace */}
+            <div className="card-main p-6 sm:p-8 flex flex-col items-stretch space-y-6">
+                <header className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-2">
                    <div className="space-y-1">
-                      <h3 className="text-2xl font-black text-slate-900 dark:text-white italic tracking-tigh transition-colors uppercase">Synchronized Workspace</h3>
-                      <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em]">HPU-3 Cluster Online</p>
+                      <h3 className="text-xl font-playfair font-bold text-[var(--foreground)] tracking-wide">Synchronized Workspace</h3>
                    </div>
-                   <div className="px-6 py-2 rounded-full bg-slate-900 dark:bg-emerald-500 text-[10px] font-black text-white dark:text-slate-900 tracking-[0.3em] uppercase transition-all shadow-xl">Processing v3.1</div>
+                   <div className="px-4 py-1.5 rounded-full border border-[var(--card-border)] text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest self-start sm:self-auto">Side-By-Side</div>
                 </header>
-                <div className="flex justify-center items-center bg-slate-950 rounded-[3rem] overflow-hidden min-h-[500px] relative border-[12px] border-slate-100 dark:border-slate-900 shadow-2xl transition-colors group">
-                    {!isImageLoaded && <div className="absolute inset-0 flex flex-col justify-center items-center space-y-4 animate-pulse z-10"><div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div><p className="text-[11px] font-black text-slate-700 uppercase tracking-[0.5em]">Establishing Sensor Link</p></div>}
-                    <canvas ref={canvasOriginalRef} className={`max-w-full h-auto cursor-crosshair z-20 rounded-3xl ${!isImageLoaded ? 'hidden' : ''}`} onMouseDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onTouchStart={handlePointerDown} />
-                    {seedPoints.current.map((pt, i) => <div key={i} className="absolute w-4 h-4 bg-emerald-400 border-[3px] border-black rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30 shadow-[0_0_20px_#10b981] animate-in zoom-in duration-300" style={{ left: `${(pt.x / canvasOriginalRef.current?.width)*100}%`, top: `${(pt.y / canvasOriginalRef.current?.height)*100}%` }} />)}
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 relative min-h-[400px]">
+                    {/* Left: Interaction Canvas */}
+                    <div className="flex flex-col gap-3 min-w-0">
+                       <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] text-center">Enhanced Source</div>
+                       <div className="flex-1 flex justify-center items-center rounded-2xl bg-[#1A1C1B]/5 border border-[var(--card-border)] overflow-hidden relative shadow-inner min-w-0">
+                           {!isImageLoaded && <div className="absolute inset-0 flex flex-col justify-center items-center space-y-4 animate-pulse z-10"><p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">No Image</p></div>}
+                           <canvas ref={canvasOriginalRef} className={`w-full h-auto object-contain cursor-crosshair z-20 ${!isImageLoaded ? 'hidden' : ''}`} onMouseDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onTouchStart={handlePointerDown} onTouchMove={handlePointerMove} onTouchEnd={handlePointerUp} />
+                           {seedPoints.current.map((pt, i) => <div key={i} className="absolute w-3 h-3 bg-[var(--highlight)] border-[2px] border-black rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30 shadow-sm animate-in zoom-in duration-200" style={{ left: `${(pt.x / canvasOriginalRef.current?.width)*100}%`, top: `${(pt.y / canvasOriginalRef.current?.height)*100}%` }} />)}
+                       </div>
+                    </div>
+
+                    <div className="w-full h-px xl:w-px xl:h-full bg-[var(--card-border)] hidden xl:block absolute left-1/2 top-0 -translate-x-1/2"></div>
+                    
+                    {/* Right: Result Canvas */}
+                    <div className="flex flex-col gap-3 min-w-0">
+                       <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] text-center">Segmentation Result</div>
+                       <div className="flex-1 flex justify-center items-center rounded-2xl bg-[#1A1C1B]/5 border border-[var(--card-border)] overflow-hidden relative shadow-inner min-w-0">
+                           <canvas ref={canvasResultRef} className={`w-full h-auto object-contain ${!isImageLoaded ? 'hidden' : ''}`}></canvas>
+                       </div>
+                    </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-               <div className="glass p-8 rounded-[3rem] dark:border-white/5 flex flex-col shadow-2xl space-y-6">
-                  <header className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-4">
-                      <h3 className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.4em]">Pixel Map</h3>
-                      <div className="px-3 py-1 bg-violet-600 text-white text-[9px] font-black rounded-full italic shadow-lg">ISOLATED</div>
-                  </header>
-                  <div className="flex-grow flex justify-center items-center bg-slate-950 rounded-3xl overflow-hidden border-2 border-slate-100 dark:border-slate-800 shadow-inner min-h-[300px] group transition-colors">
-                      <canvas ref={canvasResultRef} className="max-w-full h-auto object-contain group-hover:scale-110 transition-transform duration-[2s]"></canvas>
-                  </div>
-              </div>
-
-              <div className="glass p-10 rounded-[3.5rem] dark:border-white/5 flex flex-col justify-between shadow-2xl relative overflow-hidden transition-all duration-700">
-                  <div className="absolute top-0 right-0 p-8 opacity-5"><svg className="w-32 h-32" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg></div>
-                  <header className="flex items-center gap-4 mb-4">
-                      <div className="w-3 h-8 bg-gradient-to-b from-indigo-600 to-violet-600 rounded-full"></div>
-                      <h2 className="text-[11px] font-black text-slate-500 dark:text-slate-300 uppercase tracking-[0.4em]">Feature Set</h2>
+            {/* Feature Set */}
+            <div className="glass p-6 sm:p-8 rounded-3xl shadow-sm border border-[var(--card-border)] overflow-hidden">
+                  <header className="flex items-center gap-3 mb-6 border-b border-[var(--card-border)] pb-4">
+                      <h2 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Radiomics Feature Extraction</h2>
                   </header>
 
                   {!radiomics ? (
-                     <div className="flex-grow flex flex-col items-center justify-center space-y-4 opacity-20">
-                        <div className="w-12 h-12 border-4 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
-                        <p className="text-[11px] font-black uppercase tracking-[0.6em]">Buffering Data</p>
+                     <div className="flex flex-col items-center justify-center space-y-4 py-8 opacity-40">
+                        <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Awaiting Analysis...</p>
                      </div>
                   ) : (
-                    <div className="space-y-8 animate-in slide-in-from-right-10 duration-[1s]">
-                        <div className={`p-8 rounded-[2.5rem] border-l-[12px] shadow-2xl relative transition-all ${parseFloat(radiomics.localProbability) > 65 ? 'bg-red-500/10 border-red-600' : 'bg-emerald-500/10 border-emerald-500'}`}>
-                           <div className="text-[10px] font-black uppercase opacity-60 tracking-[0.2em] mb-2">Heuristic Confidence</div>
-                           <div className="flex items-baseline gap-2">
-                              <span className="text-6xl font-black italic tracking-tighter text-slate-900 dark:text-white transition-colors">{radiomics.localProbability}%</span>
+                    <div className="space-y-8 animate-in slide-in-from-bottom-5 duration-700">
+                        <div className={`p-6 rounded-2xl border-l-[6px] shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${parseFloat(radiomics.localProbability) > 65 ? 'bg-[#FDF6F6] border-[#A74A4A] text-[#A74A4A]' : 'bg-[#F4F8F5] border-[#5B8266] text-[#5B8266]'}`}>
+                           <div className="text-[10px] font-bold uppercase tracking-widest pl-2">Local Probability</div>
+                           <div className="text-3xl font-playfair font-bold">{radiomics.localProbability}%</div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-bold uppercase text-[var(--text-muted)] tracking-wider">
+                           <div className="p-4 rounded-xl border border-[var(--card-border)] bg-white flex flex-col gap-2">
+                              <span className="opacity-80">Area</span>
+                              <span className="text-[var(--foreground)] text-sm">{radiomics.area.toLocaleString()} px²</span>
+                           </div>
+                           <div className="p-4 rounded-xl border border-[var(--card-border)] bg-white flex flex-col gap-2">
+                              <span className="opacity-80">Mean Density</span>
+                              <span className="text-[var(--foreground)] text-sm">{radiomics.meanDensity.toFixed(1)} HU</span>
                            </div>
                         </div>
-                        <div className="grid gap-3 text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">
-                           <div className="p-4 rounded-3xl bg-slate-100/50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex justify-between items-center group hover:bg-indigo-600 hover:text-white transition-all">
-                              <span className="opacity-70 group-hover:opacity-100">Area Magnification</span>
-                              <span className="group-hover:translate-x-[-10px] transition-transform">{radiomics.area.toLocaleString()} px²</span>
-                           </div>
-                           <div className="p-4 rounded-3xl bg-slate-100/50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex justify-between items-center group hover:bg-emerald-600 hover:text-white transition-all">
-                              <span className="opacity-70 group-hover:opacity-100">Density Cluster</span>
-                              <span className="group-hover:translate-x-[-10px] transition-transform">{radiomics.meanDensity.toFixed(1)} HU'</span>
-                           </div>
-                        </div>
-                        <button onClick={handleDeepAnalyze} disabled={isLoading} className="group relative w-full overflow-hidden rounded-[2rem] bg-indigo-600 p-[2px] transition-all hover:scale-[1.02] active:scale-95 disabled:grayscale">
-                           <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-violet-600 to-indigo-500 animate-[shimmer_2s_infinite] bg-[length:200%_100%]"></div>
-                           <div className="relative bg-indigo-600 rounded-[1.9rem] py-6 px-4 flex items-center justify-center gap-4">
-                             {isLoading ? ( <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> ) : ( <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg> )}
-                             <span className="text-[12px] font-black text-white uppercase tracking-[0.3em]">{isLoading ? "Requesting Core..." : "Initiate Gemini Neural"}</span>
-                           </div>
+                        <button onClick={handleDeepAnalyze} disabled={isLoading} className="btn-premium w-full flex items-center justify-center gap-3 py-4">
+                           {isLoading ? ( <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> ) : ( <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg> )}
+                           <span>{isLoading ? "Running Diagnostic Engine..." : "Analyze with Medical AI"}</span>
                         </button>
                     </div>
                   )}
-              </div>
             </div>
         </div>
       </main>
-
-      <style jsx>{`
-        @keyframes shimmer {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-      `}</style>
     </div>
   );
 }
