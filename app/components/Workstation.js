@@ -1,366 +1,740 @@
 "use client";
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-
-const MAX_WIDTH = 800; // Increased for higher resolution processing
+import React, { useRef, useState, useEffect } from 'react';
 
 export default function Workstation({ onAnalyze, isLoading, results }) {
-  const [isImageLoaded, setIsImageLoaded] = useState(false);
-  const [brightness, setBrightness] = useState(0);
-  const [contrast, setContrast] = useState(0);
-  const [tolerance, setTolerance] = useState(30);
-  const [erosion, setErosion] = useState(0);
-  const [dilation, setDilation] = useState(0);
-  const [opening, setOpening] = useState(0);
-  const [closing, setClosing] = useState(0);
-  const [showOverlay, setShowOverlay] = useState(true);
-  const [currentMode, setCurrentMode] = useState('DRAW'); 
-  const [radiomics, setRadiomics] = useState(null);
-  
-  const rawImageObj = useRef(null);
-  const rawPixelData = useRef(null);
-  const enhancedPixelData = useRef(null);
-  const roiPoints = useRef([]);
-  const seedPoints = useRef([]);
-  const roiMask = useRef(null);
-  const isDrawing = useRef(false);
+    // --- State ---
+    const [image, setImage] = useState(null);
+    const [points, setPoints] = useState([]);
+    const [seeds, setSeeds] = useState([]);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [segmentationStep, setSegmentationStep] = useState(0); 
+    const [tolerance, setTolerance] = useState(25);
+    const [showOverlay, setShowOverlay] = useState(true);
+    const [statusText, setStatusText] = useState('กรุณาอัพโหลดภาพ CT Scan');
 
-  const canvasOriginalRef = useRef(null);
-  const canvasResultRef = useRef(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') rawImageObj.current = new window.Image();
-  }, []);
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      rawImageObj.current.onload = () => {
-        const cOrig = canvasOriginalRef.current, cRes = canvasResultRef.current;
-        let w = rawImageObj.current.width, h = rawImageObj.current.height;
-        if (w > MAX_WIDTH) { h = Math.floor(h * (MAX_WIDTH / w)); w = MAX_WIDTH; }
-        cOrig.width = w; cOrig.height = h; cRes.width = w; cRes.height = h;
-        const ctx = cOrig.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(rawImageObj.current, 0, 0, w, h);
-        rawPixelData.current = ctx.getImageData(0, 0, w, h);
-        setIsImageLoaded(true); setBrightness(0); setContrast(0);
-        setTimeout(applyImageEnhancement, 0); 
-      };
-      rawImageObj.current.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const applyImageEnhancement = useCallback(() => {
-    if (!isImageLoaded || !rawPixelData.current) return;
-    const w = canvasOriginalRef.current.width, h = canvasOriginalRef.current.height;
-    enhancedPixelData.current = new window.ImageData(new Uint8ClampedArray(rawPixelData.current.data), w, h);
-    const data = enhancedPixelData.current.data, factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-    for (let i = 0; i < data.length; i += 4) {
-        data[i] = Math.max(0, Math.min(255, factor * (data[i] - 128) + 128 + brightness));       
-        data[i+1] = Math.max(0, Math.min(255, factor * (data[i+1] - 128) + 128 + brightness));   
-        data[i+2] = Math.max(0, Math.min(255, factor * (data[i+2] - 128) + 128 + brightness));   
-    }
-    redrawOriginalCanvas();
-    if (seedPoints.current.length > 0) processSegmentation();
-  }, [isImageLoaded, brightness, contrast]);
-
-  useEffect(() => { applyImageEnhancement(); }, [applyImageEnhancement]);
-
-  const redrawOriginalCanvas = () => {
-    if (!isImageLoaded || !enhancedPixelData.current || !canvasOriginalRef.current) return;
-    const ctx = canvasOriginalRef.current.getContext('2d');
-    ctx.putImageData(enhancedPixelData.current, 0, 0);
-    const pts = roiPoints.current;
-    if (pts.length > 0) {
-        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.setLineDash(currentMode === 'SEED' ? [5, 5] : []);
-        ctx.strokeStyle = currentMode === 'SEED' ? '#6366f1' : '#10b981';
-        ctx.lineWidth = 3;
-        if (currentMode === 'SEED') { ctx.closePath(); ctx.fillStyle = 'rgba(99, 102, 241, 0.15)'; ctx.fill(); }
-        ctx.stroke();
-    }
-    if (results?.boundingBox) {
-      const [ymin, xmin, ymax, xmax] = results.boundingBox;
-      const w = canvasOriginalRef.current.width, h = canvasOriginalRef.current.height;
-      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 4; ctx.setLineDash([]);
-      ctx.strokeRect(xmin * w, ymin * h, (xmax - xmin) * w, (ymax - ymin) * h);
-      ctx.fillStyle = '#ef4444'; ctx.font = 'black 20px Inter, sans-serif';
-      ctx.fillText(results.classification === 'Malignant' ? '⚠ DETECTION: MALIGNANT' : '✓ DETECTION: BENIGN', xmin * w, ymin * h - 12);
-    }
-  };
-
-  useEffect(() => { redrawOriginalCanvas(); }, [results, currentMode]);
-
-  const handlePointerDown = (e) => {
-    if (!isImageLoaded) return;
-    const rect = canvasOriginalRef.current.getBoundingClientRect(), 
-          clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX,
-          clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY,
-          x = Math.floor((clientX - rect.left) * (canvasOriginalRef.current.width / rect.width)),
-          y = Math.floor((clientY - rect.top) * (canvasOriginalRef.current.height / rect.height));
-
-    if (currentMode === 'DRAW') {
-        isDrawing.current = true; roiPoints.current = [{x, y}]; redrawOriginalCanvas();
-    } else if (currentMode === 'SEED') {
-        if (roiMask.current && roiMask.current[y * canvasOriginalRef.current.width + x] === 1) {
-            seedPoints.current.push({x, y}); processSegmentation();
-        }
-    }
-  };
-
-  const handlePointerMove = (e) => {
-    if (!isDrawing.current || currentMode !== 'DRAW') return;
-    const rect = canvasOriginalRef.current.getBoundingClientRect(),
-          clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX,
-          clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
-    roiPoints.current.push({
-        x: Math.floor((clientX - rect.left) * (canvasOriginalRef.current.width / rect.width)),
-        y: Math.floor((clientY - rect.top) * (canvasOriginalRef.current.height / rect.height))
+    // Radiomics state
+    const [radiomicsFeatures, setRadiomicsFeatures] = useState({
+        area: 0, circularity: 0, meanDensity: 0, heterogeneity: 0
     });
-    redrawOriginalCanvas();
-  };
+    const [probability, setProbability] = useState(0); // Local quick probability
 
-  const handlePointerUp = () => {
-    if (!isDrawing.current || currentMode !== 'DRAW') return;
-    isDrawing.current = false;
-    if (roiPoints.current.length > 5) {
-        roiPoints.current.push({...roiPoints.current[0]});
-        const w = canvasOriginalRef.current.width, h = canvasOriginalRef.current.height;
-        const offCtx = Object.assign(document.createElement('canvas'), {width:w, height:h}).getContext('2d');
-        offCtx.fillStyle='#000'; offCtx.fillRect(0,0,w,h);
-        offCtx.beginPath(); offCtx.moveTo(roiPoints.current[0].x, roiPoints.current[0].y);
-        roiPoints.current.slice(1).forEach(p => offCtx.lineTo(p.x, p.y));
-        offCtx.closePath(); offCtx.fillStyle='#fff'; offCtx.fill();
-        const maskData = offCtx.getImageData(0,0,w,h).data;
-        roiMask.current = new Uint8Array(w*h);
-        for(let i=0; i<w*h; i++) roiMask.current[i] = maskData[i*4]>128?1:0;
-        setCurrentMode('SEED'); redrawOriginalCanvas();
-    } else { roiPoints.current=[]; redrawOriginalCanvas(); }
-  };
+    // Refs
+    const fileInputRef = useRef(null);
+    const originalCanvasRef = useRef(null);
+    const resultCanvasRef = useRef(null);
 
-  const processSegmentation = useCallback(() => {
-    if (!isImageLoaded || !seedPoints.current.length || !enhancedPixelData.current || !roiMask.current) return;
-    const w = canvasOriginalRef.current.width, h = canvasOriginalRef.current.height, data = enhancedPixelData.current.data;
-    let mask = new Uint8Array(w*h), stack = [], seedIntensities = [];
-    seedPoints.current.forEach(p => {
-        const sIdx = (p.y*w+p.x)*4; seedIntensities.push(0.299*data[sIdx]+0.587*data[sIdx+1]+0.114*data[sIdx+2]);
-        mask[p.y*w+p.x]=1; stack.push(p.x, p.y);
-    });
-    const dx=[0,0,-1,1], dy=[-1,1,0,0];
-    while(stack.length) {
-        const cy=stack.pop(), cx=stack.pop();
-        for(let i=0; i<4; i++) {
-            const nx=cx+dx[i], ny=cy+dy[i], nIdx=ny*w+nx;
-            if(nx>=0 && nx<w && ny>=0 && ny<h && roiMask.current[nIdx] && !mask[nIdx]) {
-                const gray = 0.299*data[nIdx*4]+0.587*data[nIdx*4+1]+0.114*data[nIdx*4+2];
-                if(seedIntensities.some(s => Math.abs(gray-s)<=tolerance)) { mask[nIdx]=1; stack.push(nx, ny); }
-            }
+    // Contexts
+    const getCtx = (canvasRef) => canvasRef.current?.getContext('2d', { willReadFrequently: true });
+
+    // Constants for drawing
+    const ROI_COLOR = '#769382'; 
+
+    // --- File Handling ---
+    const handleImageUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = originalCanvasRef.current;
+                    const ctx = getCtx(originalCanvasRef);
+                    canvas.width = 512;
+                    canvas.height = 512;
+                    ctx.drawImage(img, 0, 0, 512, 512);
+
+                    const resCanvas = resultCanvasRef.current;
+                    resCanvas.width = 512;
+                    resCanvas.height = 512;
+                    const resCtx = getCtx(resultCanvasRef);
+                    resCtx.clearRect(0, 0, 512, 512);
+
+                    setImage(img);
+                    setPoints([]);
+                    setSeeds([]);
+                    setSegmentationStep(0);
+                    setStatusText('ภาพพร้อมใช้งาน กรุณาวาดขอบเขต (Vector ROI)');
+                    resetRadiomics();
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
         }
-    }
-    const morph = (m, type) => {
-        let dst = new Uint8Array(m.length);
-        for(let y=1; y<h-1; y++) for(let x=1; x<w-1; x++) {
-            let hit = type==='erode'?1:0;
-            for(let dy=-1; dy<=1; dy++) for(let dx=-1; dx<=1; dx++) {
-                if(type==='erode') { if(!m[(y+dy)*w+x+dx]) hit=0; }
-                else { if(m[(y+dy)*w+x+dx]) hit=1; }
-            }
-            dst[y*w+x]=hit;
-        }
-        return dst;
     };
-    for(let i=0; i<erosion; i++) mask=morph(mask, 'erode');
-    for(let i=0; i<dilation; i++) mask=morph(mask, 'dilate');
-    // Opening
-    for(let j=0; j<opening; j++) { mask = morph(mask, 'erode'); mask = morph(mask, 'dilate'); }
-    // Closing
-    for(let j=0; j<closing; j++) { mask = morph(mask, 'dilate'); mask = morph(mask, 'erode'); }
 
-    const ctx = canvasResultRef.current.getContext('2d'), resImg = ctx.createImageData(w, h);
-    for(let i=0; i<mask.length; i++) {
-        const p=i*4;
-        if(showOverlay && mask[i]) { resImg.data[p]=Math.min(255, data[p]+130); resImg.data[p+1]=data[p+1]*0.3; resImg.data[p+2]=data[p+2]*0.3; }
-        else { const v=!showOverlay&&mask[i]?255:0; resImg.data[p]=showOverlay?data[p]:v; resImg.data[p+1]=showOverlay?data[p+1]:v; resImg.data[p+2]=showOverlay?data[p+2]:v; }
-        resImg.data[p+3]=255;
-    }
-    ctx.putImageData(resImg, 0, 0);
-    let area=0, perimeter=0, intensities=[];
-    for(let y=0; y<h; y++) for(let x=0; x<w; x++) {
-        const idx = y*w+x;
-        if(mask[idx]) {
-            area++;
-            if(x===0||x===w-1||y===0||y===h-1||!mask[y*w+x-1]||!mask[y*w+x+1]||!mask[(y-1)*w+x]||!mask[(y+1)*w+x]) perimeter++;
-            intensities.push(0.299*data[idx*4]+0.587*data[idx*4+1]+0.114*data[idx*4+2]);
+    const applyContrast = () => {
+        if (!image) return;
+        const ctx = getCtx(originalCanvasRef);
+        ctx.drawImage(image, 0, 0, 512, 512);
+        const imgData = ctx.getImageData(0, 0, 512, 512);
+        const data = imgData.data;
+        const factor = (259 * (128 + 255)) / (255 * (259 - 128));
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = clamp(factor * (data[i] - 128) + 128);
+            data[i + 1] = clamp(factor * (data[i + 1] - 128) + 128);
+            data[i + 2] = clamp(factor * (data[i + 2] - 128) + 128);
         }
-    }
-    if(area<10) { setRadiomics(null); return; }
-    const mean = intensities.reduce((a,b)=>a+b,0)/area, 
-          std = Math.sqrt(intensities.reduce((a,b)=>a+Math.pow(b-mean,2),0)/area), 
-          circ = (perimeter > 0) ? Math.min(1, (4*Math.PI*area)/(perimeter**2)) : 0, 
-          z = -4.5 + (area/1000)*1.8 + (1-circ)*3.5 + (std/30)*1.5;
-    setRadiomics({ area, circularity: circ, meanDensity: mean, stdDev: std, localProbability: (100/(1+Math.exp(-z))).toFixed(1) });
-  }, [isImageLoaded, tolerance, erosion, dilation, opening, closing, showOverlay]);
+        ctx.putImageData(imgData, 0, 0);
+        setStatusText('ปรับความชัดเจน (Contrast Enhanced) เรียบร้อย');
+    };
 
-  useEffect(() => { if(seedPoints.current.length) processSegmentation(); }, [processSegmentation]);
+    const applyEqualization = () => {
+        if (!image) return;
+        const ctx = getCtx(originalCanvasRef);
+        ctx.drawImage(image, 0, 0, 512, 512);
+        const imgData = ctx.getImageData(0, 0, 512, 512);
+        const data = imgData.data;
 
-  const handleDeepAnalyze = () => onAnalyze({ image: canvasResultRef.current.toDataURL("image/jpeg").split(",")[1], featureData: radiomics });
-
-  const commonCardClass = "glass p-6 rounded-2xl flex flex-col gap-4 shadow-sm";
-
-  return (
-    <div className="w-full text-slate-800 dark:text-slate-200 transition-colors duration-700">
-      <main className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+        // Histogram equalization on grayscale
+        let hist = new Array(256).fill(0);
+        for(let i=0; i<data.length; i+=4) {
+            let gray = Math.round(0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]);
+            hist[gray]++;
+        }
+        let cdf = new Array(256).fill(0);
+        cdf[0] = hist[0];
+        for(let i=1; i<256; i++) cdf[i] = cdf[i-1] + hist[i];
+        let cdfMin = cdf.find(x => x > 0) || 0;
+        const total = 512 * 512;
         
-        {/* Left Sidebar: Orchestration */}
-        <div className="md:col-span-4 flex flex-col gap-8 min-w-0">
-            <div className={commonCardClass}>
-                <header className="flex items-center gap-3 mb-2">
-                    <div className="w-2.5 h-6 bg-[var(--accent)] rounded-full"></div>
-                    <h2 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Module 01: Capture</h2>
-                </header>
-                <div className="group relative">
-                  <input onChange={handleImageUpload} type="file" className="block w-full text-xs text-[var(--foreground)] file:mr-4 file:py-3 file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:uppercase file:bg-[var(--accent)] file:text-white hover:file:opacity-90 cursor-pointer shadow-sm transition-all" accept="image/*" />
-                </div>
-            </div>
+        let map = new Array(256);
+        for(let i=0; i<256; i++) {
+            map[i] = Math.round(((cdf[i] - cdfMin) / (total - cdfMin)) * 255);
+        }
 
-            <div className={commonCardClass}>
-                <header className="flex justify-between items-center mb-2">
-                    <div className="flex items-center gap-3">
-                        <div className="w-2.5 h-6 bg-[var(--accent)] rounded-full"></div>
-                        <h2 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Module 02: Enhancement</h2>
-                    </div>
-                    <button onClick={() => { setBrightness(0); setContrast(0); }} className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-wider hover:underline">Reset</button>
-                </header>
-                <div className="space-y-6">
-                    <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]"><span>Intensity</span><span className="text-[var(--accent)]">{brightness}</span></div>
-                        <input type="range" min="-100" max="100" value={brightness} onChange={(e) => setBrightness(Number(e.target.value))} className="w-full" />
-                    </div>
-                    <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]"><span>Dynamic Range</span><span className="text-[var(--accent)]">{contrast}</span></div>
-                        <input type="range" min="-100" max="100" value={contrast} onChange={(e) => setContrast(Number(e.target.value))} className="w-full" />
-                    </div>
-                </div>
-            </div>
+        for (let i = 0; i < data.length; i += 4) {
+            let gray = Math.round(0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]);
+            let mapped = map[gray];
+            data[i] = mapped;
+            data[i + 1] = mapped;
+            data[i + 2] = mapped;
+        }
+        ctx.putImageData(imgData, 0, 0);
+        setStatusText('ปรับสมดุลแสง (Equalization) เรียบร้อย');
+    };
 
-            <div className={commonCardClass}>
-                <header className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-2.5 h-6 bg-[var(--accent)] rounded-full"></div>
-                        <h2 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Module 03: Segmentation</h2>
-                    </div>
-                </header>
-                <div className="space-y-6">
-                    <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => setCurrentMode('DRAW')} className={`p-4 rounded-xl border transition-all font-bold text-[10px] uppercase tracking-wider ${currentMode === 'DRAW' ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-md scale-105' : 'bg-transparent border-[var(--card-border)] text-[var(--foreground)] hover:bg-[var(--surface)]'}`}>1. Vector ROI</button>
-                        <button onClick={() => setCurrentMode('SEED')} className={`p-4 rounded-xl border transition-all font-bold text-[10px] uppercase tracking-wider ${currentMode === 'SEED' ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-md scale-105' : 'bg-transparent border-[var(--card-border)] text-[var(--foreground)] hover:bg-[var(--surface)]'}`}>2. Seed Pulse</button>
-                    </div>
-                    <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]"><span>Spatial Sensitivity</span><span className="text-[var(--accent)]">{tolerance}</span></div>
-                        <input type="range" min="5" max="100" value={tolerance} onChange={e=>setTolerance(Number(e.target.value))} className="w-full" />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-4 pt-4 border-t border-[var(--card-border)]">
-                        <div className="space-y-2">
-                           <div className="flex justify-between text-[9px] font-bold uppercase text-[var(--text-muted)]"><span>Erosion</span><span>{erosion}</span></div>
-                           <input type="range" min="0" max="10" value={erosion} onChange={e=>setErosion(Number(e.target.value))} className="w-full" />
-                        </div>
-                        <div className="space-y-2">
-                           <div className="flex justify-between text-[9px] font-bold uppercase text-[var(--text-muted)]"><span>Dilation</span><span>{dilation}</span></div>
-                           <input type="range" min="0" max="10" value={dilation} onChange={e=>setDilation(Number(e.target.value))} className="w-full" />
-                        </div>
-                        <div className="space-y-2">
-                           <div className="flex justify-between text-[9px] font-bold uppercase text-[var(--text-muted)]"><span>Opening</span><span>{opening}</span></div>
-                           <input type="range" min="0" max="5" value={opening} onChange={e=>setOpening(Number(e.target.value))} className="w-full" />
-                        </div>
-                        <div className="space-y-2">
-                           <div className="flex justify-between text-[9px] font-bold uppercase text-[var(--text-muted)]"><span>Closing</span><span>{closing}</span></div>
-                           <input type="range" min="0" max="5" value={closing} onChange={e=>setClosing(Number(e.target.value))} className="w-full" />
-                        </div>
-                    </div>
+    // --- Interactive Tools ---
+    const handleCanvasMouseDown = (e) => {
+        if (!image) return;
+        const rect = originalCanvasRef.current.getBoundingClientRect();
+        const scaleX = 512 / rect.width;
+        const scaleY = 512 / rect.height;
+        const x = Math.round((e.clientX - rect.left) * scaleX);
+        const y = Math.round((e.clientY - rect.top) * scaleY);
 
-                    <div className="flex flex-wrap gap-2 pt-4 border-t border-[var(--card-border)]">
-                        <button onClick={() => { if (seedPoints.current.length > 0) { seedPoints.current.pop(); processSegmentation(); redrawOriginalCanvas(); } }} disabled={seedPoints.current.length===0} className="flex-1 min-w-[30%] py-3 rounded-xl border border-[var(--card-border)] font-bold text-[9px] uppercase tracking-widest hover:bg-[var(--card-border)] disabled:opacity-30">Undo Seed</button>
-                        <button onClick={() => {roiPoints.current=[]; seedPoints.current=[]; setRadiomics(null); setCurrentMode('DRAW'); redrawOriginalCanvas();}} className="flex-1 min-w-[30%] py-3 rounded-xl border border-[var(--danger-text)] text-[var(--danger-text)] font-bold text-[9px] uppercase tracking-widest hover:bg-[var(--danger-bg)]">Reset ROI</button>
-                        <button onClick={() => setShowOverlay(!showOverlay)} className="w-full py-3 rounded-xl bg-[var(--accent)] text-white font-bold text-[9px] uppercase tracking-widest hover:opacity-90">{showOverlay ? "Active Overlay" : "Wireframe Mode"}</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        if (segmentationStep === 0) {
+            setIsDrawing(true);
+            setPoints([{ x, y }]);
+            setStatusText('กำลังวาดขอบเขต ROI...');
+        } else if (segmentationStep === 1) {
+            if (isPointInPolygon({ x, y }, points)) {
+                // Add seed
+                const newSeeds = [...seeds, { x, y }];
+                setSeeds(newSeeds);
+                processSegmentation(newSeeds);
+                setStatusText(`เพิ่มจุด Seed ที่ ${newSeeds.length} และทำการ Region Growing`);
+            } else {
+                setStatusText('! จุด Seed ต้องอยู่ภายในกรอบสีเขียว (ROI)');
+                setTimeout(() => setStatusText('สร้าง Seeds จุดที่ต้องการ...'), 2000);
+            }
+        }
+    };
 
-        {/* Center / Workspace Columns */}
-        <div className="md:col-span-8 flex flex-col gap-8 min-w-0">
+    const handleCanvasMouseMove = (e) => {
+        if (!isDrawing || segmentationStep !== 0) return;
+        const rect = originalCanvasRef.current.getBoundingClientRect();
+        const scaleX = 512 / rect.width;
+        const scaleY = 512 / rect.height;
+        const x = Math.round((e.clientX - rect.left) * scaleX);
+        const y = Math.round((e.clientY - rect.top) * scaleY);
+        setPoints(prev => [...prev, { x, y }]);
+        redrawOriginalCanvas([...points, { x, y }]);
+    };
+
+    const handleCanvasMouseUp = () => {
+        if (isDrawing && segmentationStep === 0) {
+            setIsDrawing(false);
+            if (points.length > 2) {
+                setSegmentationStep(1);
+                setStatusText('สร้างขอบเขตสำเร็จ กรุณากดเลือกจุดศูนย์กลาง (Seed) ภายในกรอบ');
+            } else {
+                setPoints([]);
+                redrawOriginalCanvas([]);
+                setStatusText('การวาดผิดพลาด กรุณาวาดใหม่ใหม่อีกครั้ง');
+            }
+        }
+    };
+
+    const redrawOriginalCanvas = (currentPoints = points) => {
+        if (!image) return;
+        const ctx = getCtx(originalCanvasRef);
+        // Redraw image
+        ctx.drawImage(image, 0, 0, 512, 512);
+
+        // Draw ROI
+        if (currentPoints.length > 0) {
+            ctx.beginPath();
+            ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+            for (let i = 1; i < currentPoints.length; i++) {
+                ctx.lineTo(currentPoints[i].x, currentPoints[i].y);
+            }
+            if (!isDrawing && currentPoints.length > 2) ctx.closePath();
             
-            {/* Split Screen Workspace */}
-            <div className="card-main p-6 sm:p-8 flex flex-col items-stretch space-y-6">
-                <header className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-2">
-                   <div className="space-y-1">
-                      <h3 className="text-xl font-playfair font-bold text-[var(--foreground)] tracking-wide">Synchronized Workspace</h3>
-                   </div>
-                   <div className="px-4 py-1.5 rounded-full border border-[var(--card-border)] text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest self-start sm:self-auto">Side-By-Side</div>
-                </header>
+            ctx.strokeStyle = ROI_COLOR;
+            ctx.lineWidth = 2;
+            ctx.stroke();
 
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 relative min-h-[400px]">
-                    {/* Left: Interaction Canvas */}
-                    <div className="flex flex-col gap-3 min-w-0">
-                       <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] text-center">Enhanced Source</div>
-                       <div className="flex-1 flex justify-center items-center rounded-2xl bg-[#1A1C1B]/5 border border-[var(--card-border)] overflow-hidden relative shadow-inner min-w-0">
-                           {!isImageLoaded && <div className="absolute inset-0 flex flex-col justify-center items-center space-y-4 animate-pulse z-10"><p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">No Image</p></div>}
-                           <canvas ref={canvasOriginalRef} className={`w-full h-auto object-contain cursor-crosshair z-20 ${!isImageLoaded ? 'hidden' : ''}`} onMouseDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onTouchStart={handlePointerDown} onTouchMove={handlePointerMove} onTouchEnd={handlePointerUp} />
-                           {seedPoints.current.map((pt, i) => <div key={i} className="absolute w-3 h-3 bg-[var(--highlight)] border-[2px] border-black rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30 shadow-sm animate-in zoom-in duration-200" style={{ left: `${(pt.x / canvasOriginalRef.current?.width)*100}%`, top: `${(pt.y / canvasOriginalRef.current?.height)*100}%` }} />)}
-                       </div>
-                    </div>
+            // Highlight fill
+            if (!isDrawing && currentPoints.length > 2) {
+                ctx.fillStyle = 'rgba(118, 147, 130, 0.15)'; // hc-green very light
+                ctx.fill();
+            }
+        }
 
-                    <div className="w-full h-px xl:w-px xl:h-full bg-[var(--card-border)] hidden xl:block absolute left-1/2 top-0 -translate-x-1/2"></div>
+        // Draw Seeds
+        seeds.forEach(seed => {
+            ctx.beginPath();
+            ctx.arc(seed.x, seed.y, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#A74A4A'; // red marker for seed
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        });
+    };
+
+    // Keep original canvas updated when points or seeds change
+    useEffect(() => {
+        if(!isDrawing) redrawOriginalCanvas();
+    }, [points, seeds]);
+
+    // Helpers
+    const isPointInPolygon = (point, vs) => {
+        let x = point.x, y = point.y;
+        let inside = false;
+        for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+            let xi = vs[i].x, yi = vs[i].y;
+            let xj = vs[j].x, yj = vs[j].y;
+            let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    };
+    const clamp = (val) => Math.min(255, Math.max(0, val));
+
+    // --- Core Segmentation Logic ---
+    const processSegmentation = (currentSeeds = seeds) => {
+        if (currentSeeds.length === 0 || !image || points.length < 3) return;
+        
+        const originalCtx = getCtx(originalCanvasRef);
+        const originalData = originalCtx.getImageData(0, 0, 512, 512);
+        const data = originalData.data;
+
+        // Bounding box of ROI to limit search
+        let minX = 512, minY = 512, maxX = 0, maxY = 0;
+        points.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        });
+
+        // Add padding
+        minX = Math.max(0, Math.floor(minX) - 10);
+        minY = Math.max(0, Math.floor(minY) - 10);
+        maxX = Math.min(512, Math.ceil(maxX) + 10);
+        maxY = Math.min(512, Math.ceil(maxY) + 10);
+
+        let visited = new Uint8Array(512 * 512);
+        let segmented = new Uint8Array(512 * 512);
+        
+        // We do region growing for EVERY seed
+        currentSeeds.forEach(seed => {
+            let queue = [seed];
+            let startIdx = (seed.y * 512 + seed.x) * 4;
+            // Target intensity for THIS seed
+            let targetIntensity = Math.round(0.299 * data[startIdx] + 0.587 * data[startIdx+1] + 0.114 * data[startIdx+2]);
+
+            while (queue.length > 0) {
+                let p = queue.shift();
+                let idx = p.y * 512 + p.x;
+
+                if (visited[idx]) continue;
+                if (!isPointInPolygon(p, points)) { visited[idx] = 1; continue; }
+
+                let pxIdx = idx * 4;
+                let intensity = Math.round(0.299 * data[pxIdx] + 0.587 * data[pxIdx+1] + 0.114 * data[pxIdx+2]);
+
+                if (Math.abs(intensity - targetIntensity) <= tolerance) {
+                    visited[idx] = 1;
+                    segmented[idx] = 255;
+
+                    if (p.x > minX) queue.push({x: p.x - 1, y: p.y});
+                    if (p.x < maxX - 1) queue.push({x: p.x + 1, y: p.y});
+                    if (p.y > minY) queue.push({x: p.x, y: p.y - 1});
+                    if (p.y < maxY - 1) queue.push({x: p.x, y: p.y + 1});
+                }
+            }
+        });
+
+        updateResultCanvasAndMetrics(segmented, minX, minY, maxX, maxY);
+    };
+
+    const updateResultCanvasAndMetrics = (segmentedBinary, minX, minY, maxX, maxY) => {
+        const resCtx = getCtx(resultCanvasRef);
+        const originalData = getCtx(originalCanvasRef).getImageData(0, 0, 512, 512).data;
+        const resImgData = new ImageData(512, 512);
+        const resData = resImgData.data;
+
+        let area = 0;
+        let perimeter = 0;
+        let intensities = [];
+
+        for (let y = minY; y < maxY; y++) {
+            for (let x = minX; x < maxX; x++) {
+                let idx = y * 512 + x;
+                let pxIdx = idx * 4;
+                if (segmentedBinary[idx] === 255) {
+                    area++;
+                    // Overlay color (red-ish or true)
+                    resData[pxIdx] = 167; // R
+                    resData[pxIdx+1] = 74; // G
+                    resData[pxIdx+2] = 74; // B
+                    resData[pxIdx+3] = showOverlay ? 180 : 255;
                     
-                    {/* Right: Result Canvas */}
-                    <div className="flex flex-col gap-3 min-w-0">
-                       <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] text-center">Segmentation Result</div>
-                       <div className="flex-1 flex justify-center items-center rounded-2xl bg-[#1A1C1B]/5 border border-[var(--card-border)] overflow-hidden relative shadow-inner min-w-0">
-                           <canvas ref={canvasResultRef} className={`w-full h-auto object-contain ${!isImageLoaded ? 'hidden' : ''}`}></canvas>
-                       </div>
+                    let intensity = Math.round(0.299 * originalData[pxIdx] + 0.587 * originalData[pxIdx+1] + 0.114 * originalData[pxIdx+2]);
+                    intensities.push(intensity);
+
+                    // Perimeter check
+                    if (segmentedBinary[idx-1]===0 || segmentedBinary[idx+1]===0 || segmentedBinary[idx-512]===0 || segmentedBinary[idx+512]===0) {
+                        perimeter++;
+                    }
+                } else if (showOverlay) {
+                    // Show original image in background
+                    resData[pxIdx] = originalData[pxIdx];
+                    resData[pxIdx+1] = originalData[pxIdx+1];
+                    resData[pxIdx+2] = originalData[pxIdx+2];
+                    resData[pxIdx+3] = 255;
+                } else {
+                    resData[pxIdx+3] = 0; // Transparent
+                }
+            }
+        }
+        resCtx.putImageData(resImgData, 0, 0);
+
+        // Calc features
+        if (area > 0) {
+            let circularity = (4 * Math.PI * area) / (Math.pow(perimeter || 1, 2));
+            let mean = intensities.reduce((a, b) => a + b, 0) / area;
+            let variance = intensities.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / area;
+            let heterogeneity = Math.sqrt(variance) / mean;
+
+            setRadiomicsFeatures({
+                area: area,
+                circularity: Math.min(1, circularity),
+                meanDensity: mean,
+                heterogeneity: heterogeneity
+            });
+
+            // Local Mock probability
+            let riskScore = 0;
+            if (area > 500) riskScore += 1;
+            if (area > 1000) riskScore += 1;
+            if (circularity < 0.6) riskScore += 2;
+            else if (circularity < 0.8) riskScore += 1;
+            if (heterogeneity > 0.15) riskScore += 1;
+            if (mean > 150) riskScore += 1;
+            
+            let p = 1 / (1 + Math.exp(-(riskScore - 2)));
+            setProbability(p);
+        } else {
+            resetRadiomics();
+        }
+    };
+
+    const resetRadiomics = () => {
+        setRadiomicsFeatures({area: 0, circularity: 0, meanDensity: 0, heterogeneity: 0});
+        setProbability(0);
+    };
+
+    // Morphology wrappers
+    const applyMorphology = (operation) => {
+        if(seeds.length === 0) return;
+        setStatusText(`Running mathematical morphology: ${operation}...`);
+        
+        // Read current result binary
+        const resCtx = getCtx(resultCanvasRef);
+        const currentData = resCtx.getImageData(0, 0, 512, 512).data;
+        let binary = new Uint8Array(512 * 512);
+
+        let minX = 512, minY = 512, maxX = 0, maxY = 0; // recalculate bounding
+
+        for(let i=0; i<512*512; i++) {
+            if(currentData[i*4+3] > 0 && currentData[i*4] === 167) { 
+                binary[i] = 255; 
+                let x = i % 512; let y = Math.floor(i / 512);
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        
+        // Pad
+        minX = Math.max(0, minX - 5); minY = Math.max(0, minY - 5);
+        maxX = Math.min(512, maxX + 5); maxY = Math.min(512, maxY + 5);
+
+        let newBinary = new Uint8Array(512 * 512);
+
+        const erode = (bin) => {
+            let out = new Uint8Array(512*512);
+            for(let y=minY+1; y<maxY-1; y++){
+                for(let x=minX+1; x<maxX-1; x++){
+                    let idx = y*512+x;
+                    if(bin[idx]===255 && bin[idx-1]===255 && bin[idx+1]===255 && bin[idx-512]===255 && bin[idx+512]===255){
+                        out[idx]=255;
+                    }
+                }
+            }
+            return out;
+        };
+
+        const dilate = (bin) => {
+            let out = new Uint8Array(bin); // Copy
+            for(let y=minY+1; y<maxY-1; y++){
+                for(let x=minX+1; x<maxX-1; x++){
+                    let idx = y*512+x;
+                    if(bin[idx]===255) {
+                        out[idx-1]=255; out[idx+1]=255; out[idx-512]=255; out[idx+512]=255;
+                        out[idx-513]=255; out[idx-511]=255; out[idx+511]=255; out[idx+513]=255; // 8 conn
+                    }
+                }
+            }
+            return out;
+        };
+
+        if(operation === 'erosion') newBinary = erode(binary);
+        else if(operation === 'dilation') newBinary = dilate(binary);
+        else if(operation === 'opening') newBinary = dilate(erode(binary));
+        else if(operation === 'closing') newBinary = erode(dilate(binary));
+
+        updateResultCanvasAndMetrics(newBinary, minX, minY, maxX, maxY);
+        setStatusText(`Morphology '${operation}' applied.`);
+    };
+
+    // Actions
+    const handleUndoSeed = () => {
+        if(seeds.length > 0) {
+            const newSeeds = seeds.slice(0, -1);
+            setSeeds(newSeeds);
+            if(newSeeds.length === 0) {
+                const resCtx = getCtx(resultCanvasRef);
+                resCtx.clearRect(0,0,512,512);
+                resetRadiomics();
+                setStatusText('ลบจุด Seed ทั้งหมดแล้ว กรุณาเลือกจุดใหม่');
+            } else {
+                processSegmentation(newSeeds);
+            }
+        }
+    };
+
+    const handleClearAll = () => {
+        setPoints([]);
+        setSeeds([]);
+        setSegmentationStep(0);
+        const resCtx = getCtx(resultCanvasRef);
+        resCtx.clearRect(0,0,512,512);
+        resetRadiomics();
+        setStatusText('รีเซ็ต ROI เรียบร้อย เริ่มวาดใหม่ได้');
+    };
+
+    const handleNewScan = () => {
+        setImage(null);
+        setPoints([]);
+        setSeeds([]);
+        setSegmentationStep(0);
+        resetRadiomics();
+        const ctx = getCtx(originalCanvasRef);
+        ctx.clearRect(0,0,512,512);
+        const resCtx = getCtx(resultCanvasRef);
+        resCtx.clearRect(0,0,512,512);
+        setStatusText('เริ่มงานใหม่ กรุณาอัพโหลดภาพ CT Scan');
+        if(fileInputRef.current) fileInputRef.current.value = "";
+    };
+
+    // Effect for Tolerance changed -> re-run
+    useEffect(() => {
+        if(seeds.length > 0) {
+            processSegmentation(seeds);
+        }
+    }, [tolerance, showOverlay]);
+
+    // Handle Deep AI Analysis trigger
+    const triggerAnalysis = () => {
+        if (!image || seeds.length === 0) {
+            setStatusText('กรุณาวาด ROI และ Seed เพื่อ segment ก่อนวิเคราะห์!');
+            return;
+        }
+
+        // Get the result canvas as base64
+        const imageDataUrl = originalCanvasRef.current.toDataURL("image/jpeg");
+
+        onAnalyze({
+            image: imageDataUrl,
+            radiomics: radiomicsFeatures
+        });
+    };
+
+    return (
+      <>
+        {/* Left Panel: Controls */}
+        <div className="lg:col-span-3 space-y-6">
+            <div className="panel p-5">
+                <div className="flex items-center gap-3 mb-4 border-b border-hc-light/30 pb-3">
+                    <div className="bg-hc-cream text-hc-green w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">01</div>
+                    <h2 className="text-lg font-serif font-bold text-hc-dark uppercase tracking-wide">Image Source</h2>
+                </div>
+                <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-hc-light hover:border-hc-green bg-hc-cream/30 hover:bg-hc-cream transition-all rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer text-center gap-3 relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-hc-green/5 -translate-y-full group-hover:translate-y-0 transition-transform duration-500"></div>
+                    <i className="fas fa-cloud-upload-alt text-4xl text-hc-green/80 group-hover:scale-110 transition-transform"></i>
+                    <div>
+                        <p className="font-bold text-hc-dark text-sm">Upload CT Scan (DICOM/PNG)</p>
+                        <p className="text-xs text-hc-light mt-1">คลิกเพื่อเลือกไฟล์ภาพ</p>
                     </div>
+                    <input 
+                        ref={fileInputRef}
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleImageUpload} 
+                        className="hidden" 
+                    />
                 </div>
             </div>
 
-            {/* Feature Set */}
-            <div className="glass p-6 sm:p-8 rounded-3xl shadow-sm border border-[var(--card-border)] overflow-hidden">
-                  <header className="flex items-center gap-3 mb-6 border-b border-[var(--card-border)] pb-4">
-                      <h2 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Radiomics Feature Extraction</h2>
-                  </header>
+            <div className="panel p-5">
+                <div className="flex items-center gap-3 mb-4 border-b border-hc-light/30 pb-3">
+                    <div className="bg-hc-cream text-hc-green w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">02</div>
+                    <h2 className="text-lg font-serif font-bold text-hc-dark uppercase tracking-wide">Enhancement</h2>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <button onClick={applyContrast} disabled={!image} className="bg-white border border-hc-light/50 text-hc-dark text-xs py-3 px-2 rounded-xl font-bold uppercase tracking-wider hover:bg-hc-cream hover:border-hc-green hover:text-hc-green transition-all shadow-sm active:scale-[0.98] flex flex-col items-center gap-2 disabled:opacity-50 disabled:pointer-events-none">
+                        <i className="fas fa-adjust text-lg"></i>
+                        Soft Contrast
+                    </button>
+                    <button onClick={applyEqualization} disabled={!image} className="bg-white border border-hc-light/50 text-hc-dark text-xs py-3 px-2 rounded-xl font-bold uppercase tracking-wider hover:bg-hc-cream hover:border-hc-green hover:text-hc-green transition-all shadow-sm active:scale-[0.98] flex flex-col items-center gap-2 disabled:opacity-50 disabled:pointer-events-none">
+                        <i className="fas fa-chart-bar text-lg"></i>
+                        Equalization
+                    </button>
+                </div>
+            </div>
 
-                  {!radiomics ? (
-                     <div className="flex flex-col items-center justify-center space-y-4 py-8 opacity-40">
-                        <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Awaiting Analysis...</p>
-                     </div>
-                  ) : (
-                    <div className="space-y-8 animate-in slide-in-from-bottom-5 duration-700">
-                        <div className={`p-6 rounded-2xl border-l-[6px] shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${parseFloat(radiomics.localProbability) > 65 ? 'bg-[#FDF6F6] border-[#A74A4A] text-[#A74A4A]' : 'bg-[#F4F8F5] border-[#5B8266] text-[#5B8266]'}`}>
-                           <div className="text-[10px] font-bold uppercase tracking-widest pl-2">Local Probability</div>
-                           <div className="text-3xl font-playfair font-bold">{radiomics.localProbability}%</div>
+            <div className="panel p-5">
+                <div className="flex items-center gap-3 mb-4 border-b border-hc-light/30 pb-3">
+                    <div className="bg-hc-cream text-hc-green w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">03</div>
+                    <h2 className="text-lg font-serif font-bold text-hc-dark uppercase tracking-wide">Segmentation</h2>
+                </div>
+                
+                <div className="space-y-5">
+                    {/* Step Tabs/Indicators */}
+                    <div className="flex bg-hc-cream/50 rounded-lg p-1 relative">
+                        <div className={`flex-1 text-center py-2 text-xs font-bold uppercase rounded-md transition-all ${segmentationStep === 0 ? 'bg-white shadow-sm text-hc-green' : 'text-hc-light'}`}>
+                            1. DRAW ROI
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-bold uppercase text-[var(--text-muted)] tracking-wider">
-                           <div className="p-4 rounded-xl border border-[var(--card-border)] bg-white flex flex-col gap-2">
-                              <span className="opacity-80">Area</span>
-                              <span className="text-[var(--foreground)] text-sm">{radiomics.area.toLocaleString()} px²</span>
-                           </div>
-                           <div className="p-4 rounded-xl border border-[var(--card-border)] bg-white flex flex-col gap-2">
-                              <span className="opacity-80">Mean Density</span>
-                              <span className="text-[var(--foreground)] text-sm">{radiomics.meanDensity.toFixed(1)} HU</span>
-                           </div>
+                        <div className={`flex-1 text-center py-2 text-xs font-bold uppercase rounded-md transition-all ${segmentationStep === 1 ? 'bg-white shadow-sm text-hc-green' : 'text-hc-light'}`}>
+                            2. MULTI SEEDS
                         </div>
-                        <button onClick={handleDeepAnalyze} disabled={isLoading} className="btn-premium w-full flex items-center justify-center gap-3 py-4">
-                           {isLoading ? ( <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> ) : ( <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg> )}
-                           <span>{isLoading ? "Running Diagnostic Engine..." : "Analyze with Medical AI"}</span>
+                    </div>
+
+                    <div className="bg-hc-cream/30 p-3 rounded-xl border border-hc-light/20">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-xs font-bold uppercase text-hc-dark">Region Tolerance</label>
+                            <span className="text-xs font-bold bg-white px-2 py-1 rounded text-hc-green shadow-sm border border-hc-light/20">{tolerance}</span>
+                        </div>
+                        <input type="range" min="5" max="100" value={tolerance} onChange={(e)=>setTolerance(parseInt(e.target.value))} className="w-full" />
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase text-hc-light tracking-widest px-2">Morphological Ops (Active)</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button onClick={()=>applyMorphology('erosion')} disabled={seeds.length===0} className="border border-hc-light/40 py-2 rounded-lg text-xs font-bold text-hc-dark hover:bg-hc-cream hover:text-hc-green transition-all shadow-sm disabled:opacity-50">Erosion</button>
+                            <button onClick={()=>applyMorphology('dilation')} disabled={seeds.length===0} className="border border-hc-light/40 py-2 rounded-lg text-xs font-bold text-hc-dark hover:bg-hc-cream hover:text-hc-green transition-all shadow-sm disabled:opacity-50">Dilation</button>
+                            <button onClick={()=>applyMorphology('opening')} disabled={seeds.length===0} className="border border-hc-light/40 py-2 rounded-lg text-xs font-bold text-hc-dark hover:bg-hc-cream hover:text-hc-green transition-all shadow-sm disabled:opacity-50">Opening</button>
+                            <button onClick={()=>applyMorphology('closing')} disabled={seeds.length===0} className="border border-hc-light/40 py-2 rounded-lg text-xs font-bold text-hc-dark hover:bg-hc-cream hover:text-hc-green transition-all shadow-sm disabled:opacity-50">Closing</button>
+                        </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-hc-light/30 flex justify-between items-center">
+                        <label className="text-xs font-bold text-hc-dark uppercase flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={showOverlay} onChange={(e)=>setShowOverlay(e.target.checked)} className="rounded text-hc-green focus:ring-hc-green" />
+                            Show Base Image
+                        </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-4">
+                        <button onClick={handleUndoSeed} disabled={seeds.length === 0} className="py-2 px-3 border border-hc-light/50 text-hc-dark text-xs font-bold uppercase rounded-lg hover:bg-hc-cream transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm">
+                            <i className="fas fa-undo"></i> Undo Seed
+                        </button>
+                        <button onClick={handleClearAll} disabled={points.length === 0} className="py-2 px-3 border border-[#A74A4A]/30 text-[#A74A4A] text-xs font-bold uppercase rounded-lg hover:bg-[#FDF6F6] transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm">
+                            <i className="fas fa-trash-alt"></i> Clear All
                         </button>
                     </div>
-                  )}
+
+                    <button onClick={handleNewScan} className="w-full py-3 mt-2 border-2 border-hc-dark border-dashed text-hc-dark text-xs font-bold uppercase tracking-wider rounded-xl hover:bg-hc-dark hover:text-white transition-all">
+                        <i className="fas fa-file-medical mr-2"></i> New Scan
+                    </button>
+                </div>
             </div>
         </div>
-      </main>
-    </div>
-  );
+
+        {/* Center Panel: Canvases */}
+        <div className="lg:col-span-5 flex flex-col gap-6">
+            <div className="panel p-2 flex-col flex bg-[#1a1c1b] border-hc-dark shadow-2xl relative group pb-10">
+                <div className="absolute top-4 left-4 z-10 bg-black/60 backdrop-blur px-3 py-1.5 rounded text-[10px] uppercase font-bold tracking-widest text-[#F3EFE3] border border-white/10 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-hc-green animate-pulse"></span>
+                    Workspace <span className="opacity-50">|</span> <span className="text-hc-light">Original CT</span>
+                </div>
+                
+                <div className="canvas-container w-full aspect-square border-none shadow-none m-auto overflow-hidden relative">
+                    {!image && (
+                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                             <div className="text-white/20 flex flex-col items-center">
+                                 <i className="fas fa-image text-6xl mb-2"></i>
+                                 <span className="text-[#F3EFE3] uppercase tracking-widest text-xs font-bold">No Image</span>
+                             </div>
+                         </div>
+                    )}
+                    <canvas 
+                        ref={originalCanvasRef} 
+                        className={`max-w-full max-h-full object-contain ${image ? 'cursor-crosshair' : ''}`}
+                        onMouseDown={handleCanvasMouseDown}
+                        onMouseMove={handleCanvasMouseMove}
+                        onMouseUp={handleCanvasMouseUp}
+                        onMouseLeave={handleCanvasMouseUp}
+                    ></canvas>
+                    
+                    {/* Crosshair guide overlay when drawing ROI */}
+                    {isDrawing && segmentationStep === 0 && (
+                        <div className="absolute inset-0 pointer-events-none border border-hc-green/30 animate-pulse"></div>
+                    )}
+                </div>
+            </div>
+
+            <div className="panel p-2 flex-col flex bg-[#1a1c1b] border-hc-dark shadow-2xl relative pb-10">
+                <div className="absolute top-4 left-4 z-10 bg-black/60 backdrop-blur px-3 py-1.5 rounded text-[10px] uppercase font-bold tracking-widest text-[#F3EFE3] border border-white/10 flex items-center gap-2">
+                    <i className="fas fa-microscope text-hc-beige"></i>
+                    AI Mask <span className="opacity-50">|</span> <span className="text-hc-light">Segmentation Result</span>
+                </div>
+                
+                <div className="canvas-container w-full aspect-square border-none shadow-none m-auto relative">
+                     <canvas ref={resultCanvasRef} className="max-w-full max-h-full object-contain pointer-events-none"></canvas>
+                </div>
+            </div>
+
+            <div className="bg-hc-dark text-hc-cream p-3 rounded-xl border border-hc-dark shadow-lg flex items-center px-4 gap-3">
+                <i className="fas fa-terminal text-hc-green/60"></i>
+                <span className="text-xs font-mono lowercase tracking-wider opacity-80">{statusText}</span>
+            </div>
+        </div>
+
+        {/* Right Panel: Advanced Classification */}
+        <div className="lg:col-span-4 space-y-6">
+            <div className="panel h-full flex flex-col overflow-hidden relative">
+                {/* Header */}
+                <div className="bg-hc-dark p-6 text-white text-center relative">
+                    <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
+                    <i className="fas fa-clipboard-check text-3xl mb-3 text-hc-green"></i>
+                    <h2 className="text-xl font-serif font-bold uppercase tracking-widest text-hc-beige">Diagnostic Report</h2>
+                    <p className="text-[10px] uppercase tracking-widest opacity-60 mt-1">LungCare Radiomics AI Engine</p>
+                </div>
+
+                <div className="p-6 flex-1 flex flex-col gap-6">
+                    
+                    {/* Local Probability Banner */}
+                    <div className="flex flex-col gap-2">
+                        <label className="text-[10px] font-bold uppercase text-hc-light tracking-widest">Base Malignancy Index</label>
+                        <div className="flex items-end gap-3">
+                            <span className={`text-5xl font-mono tracking-tighter ${probability > 0.6 ? 'text-[#A74A4A]' : probability > 0.3 ? 'text-hc-dark' : 'text-hc-green'}`}>
+                                {(probability * 100).toFixed(1)}<span className="text-2xl text-hc-light">%</span>
+                            </span>
+                            <div className="pb-1 text-xs font-bold uppercase px-3 py-1 rounded border bg-hc-cream border-hc-light/30">
+                                {probability > 0.6 ? 'High Risk' : probability > 0.3 ? 'Indeterminate' : 'Low Risk'}
+                            </div>
+                        </div>
+                        {/* Progress Bar */}
+                         <div className="h-1.5 w-full bg-hc-cream rounded-full mt-2 overflow-hidden flex">
+                            <div className="h-full bg-hc-green transition-all duration-1000" style={{width: `${Math.min(probability*100, 30)}%`}}></div>
+                            <div className="h-full bg-yellow-500/80 transition-all duration-1000" style={{width: `${Math.max(0, Math.min((probability-0.3)*100, 30))}%`}}></div>
+                            <div className="h-full bg-[#A74A4A] transition-all duration-1000" style={{width: `${Math.max(0, (probability-0.6)*100)}%`}}></div>
+                        </div>
+                    </div>
+
+                    {/* Radiomics Data */}
+                    <div className="bg-hc-cream/50 rounded-xl p-4 border border-hc-light/20">
+                        <label className="text-[10px] font-bold uppercase text-hc-light tracking-widest flex items-center gap-2 mb-3">
+                            <i className="fas fa-chart-pie"></i> Local Radiomics
+                        </label>
+                        <div className="grid grid-cols-2 gap-y-4 gap-x-2">
+                            <div>
+                                <p className="text-[10px] text-hc-light uppercase font-bold">Area (px)</p>
+                                <p className="text-lg font-mono text-hc-dark font-bold">{Math.round(radiomicsFeatures.area).toLocaleString()}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-hc-light uppercase font-bold">Circularity</p>
+                                <p className="text-lg font-mono text-hc-dark font-bold">{radiomicsFeatures.circularity.toFixed(3)}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-hc-light uppercase font-bold">Mean Density</p>
+                                <p className="text-lg font-mono text-hc-dark font-bold">{Math.round(radiomicsFeatures.meanDensity)}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-hc-light uppercase font-bold">Heterogeneity</p>
+                                <p className="text-lg font-mono text-hc-dark font-bold">{radiomicsFeatures.heterogeneity.toFixed(3)}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Button for NextJS AI Backend */}
+                    <div className="mt-auto">
+                        <button 
+                            onClick={triggerAnalysis}
+                            disabled={isLoading || seeds.length === 0}
+                            className="w-full bg-hc-dark text-white font-serif text-sm uppercase tracking-widest py-4 rounded-xl shadow-lg hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
+                        >
+                            {isLoading ? (
+                                <><i className="fas fa-circle-notch fa-spin"></i> Analyzing with Cloud AI...</>
+                            ) : (
+                                <>Generate AI Report <i className="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i></>
+                            )}
+                        </button>
+                    </div>
+
+                    {/* Cloud AI Results Display */}
+                    {results && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white border border-hc-green/40 p-4 rounded-xl shadow-md relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-3 opacity-10">
+                                <i className="fas fa-robot text-5xl"></i>
+                            </div>
+                            <h3 className="text-xs font-bold text-hc-green uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <i className="fas fa-check-circle"></i> AI Conclusion
+                            </h3>
+                            
+                            <div className="text-sm text-hc-dark font-bold mb-2">
+                                การประเมิน: <span className={results.malignancyRisk > 0.6 ? 'text-[#A74A4A]' : 'text-hc-green'}>{results.assessment || "พบความเสี่ยง"}</span>
+                            </div>
+
+                            <ul className="reason-list text-hc-dark text-xs leading-relaxed opacity-90 pl-1">
+                                {results.reasons ? results.reasons.map((r, i) => <li key={i}>{r}</li>) : (
+                                    <li>ลักษณะของก้อนเนื้อบ่งชี้ถึงความจำเป็นในการติดตามผล</li>
+                                )}
+                            </ul>
+                        </div>
+                    )}
+
+                </div>
+            </div>
+        </div>
+      </>
+    );
 }

@@ -1,22 +1,12 @@
 "use client";
 import Workstation from "./components/Workstation";
-import ResultsDisplay from "./components/ResultsDisplay";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 export default function Home() {
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [theme, setTheme] = useState("light");
-
-  useEffect(() => {
-    const root = window.document.documentElement;
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("dark");
-    }
-  }, [theme]);
+  const [showWelcome, setShowWelcome] = useState(true);
 
   const handleAnalyze = async (payload) => {
     setIsLoading(true); setError(null); setResults(null);
@@ -33,67 +23,58 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8 max-w-[100rem] mx-auto space-y-12">
-      {/* Theme Toggler */}
-      <div className="fixed top-6 right-6 z-[100]">
-        <div className="glass p-1.5 flex items-center gap-1">
-           <button 
-             onClick={() => setTheme("light")}
-             className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${theme === 'light' ? 'bg-[var(--accent)] text-white shadow-md' : 'text-[var(--text-muted)] hover:text-[var(--foreground)]'}`}
-           >
-              Clinic
-           </button>
-           <button 
-             onClick={() => setTheme("dark")}
-             className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${theme === 'dark' ? 'bg-[var(--accent)] text-white shadow-md' : 'text-[var(--text-muted)] hover:text-[var(--foreground)]'}`}
-           >
-              Night
-           </button>
+    <>
+      {/* Welcome Screen */}
+      {showWelcome && (
+        <div className={`fixed inset-0 z-[100] bg-hc-cream flex flex-col items-center justify-center transition-all duration-1000 ease-in-out text-hc-dark`}>
+            <div className="relative z-10 flex flex-col items-center text-center px-6">
+                <div className="mb-6">
+                    <i className="fas fa-lungs text-6xl text-hc-green opacity-90"></i>
+                </div>
+                <h1 className="font-serif text-6xl md:text-8xl mb-2 tracking-tight">
+                    Lung<span className="text-hc-green italic">Care</span>
+                </h1>
+                <div className="space-y-2 mb-12">
+                    <p className="text-2xl md:text-3xl font-serif text-hc-dark/80 tracking-wide uppercase">AI Nodule Analysis</p>
+                    <p className="text-hc-dark/60 text-base md:text-lg font-light">ระบบวิเคราะห์และคัดกรองก้อนเนื้อในปอดด้วย AI</p>
+                </div>
+                <button 
+                  onClick={() => setShowWelcome(false)}
+                  className="group bg-hc-green text-white font-serif text-lg py-4 px-12 rounded-full shadow-lg shadow-hc-green/20 transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-4">
+                    Start AI Analysis
+                    <i className="fas fa-chevron-right text-xs group-hover:translate-x-1 transition-transform opacity-70"></i>
+                </button>
+            </div>
+            <div className="absolute bottom-10 flex flex-col items-center gap-1">
+                <span className="text-[10px] text-hc-light font-bold tracking-[0.3em] uppercase">Developed By</span>
+                <span className="text-sm font-serif text-hc-green font-bold tracking-widest italic">LUNGCARE TEAM</span>
+            </div>
         </div>
+      )}
+
+      {/* Main App */}
+      <div className={`${showWelcome ? 'overflow-hidden h-screen' : ''}`}>
+        <nav className="bg-white border-b border-hc-light/30 p-4 sticky top-0 z-50">
+            <div className="max-w-[1400px] mx-auto flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    <i className="fas fa-lungs text-2xl text-hc-green"></i>
+                    <div className="flex flex-col leading-tight border-l border-hc-light/50 pl-4">
+                        <h1 className="text-xl font-serif text-hc-dark font-bold tracking-tight">Lung<span className="text-hc-green italic">Care</span></h1>
+                        <span className="text-[9px] uppercase tracking-widest text-hc-light font-bold">AI Analysis System</span>
+                    </div>
+                </div>
+                <div className="hidden md:flex items-center gap-6 text-xs font-bold text-hc-light tracking-widest uppercase">
+                    <span>Radiomics Workstation</span>
+                    <div className="h-4 w-px bg-hc-light/30"></div>
+                    <span className="text-hc-green italic"><i className="fas fa-robot mr-1"></i> AI Powered</span>
+                </div>
+            </div>
+        </nav>
+
+        <main className="max-w-[1400px] mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-2">
+            <Workstation onAnalyze={handleAnalyze} isLoading={isLoading} results={results} />
+        </main>
       </div>
-
-      <header className="relative text-center space-y-4 pt-12">
-        <div className="inline-flex items-center justify-center p-4 mb-2 rounded-full bg-[var(--highlight)] text-[var(--accent)] shadow-sm">
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-        </div>
-        
-        <div className="space-y-2">
-          <h1 className="font-playfair text-5xl md:text-7xl font-bold tracking-tight text-[var(--foreground)]">
-            LungCare
-          </h1>
-          <div className="flex justify-center items-center gap-4 text-xs font-bold uppercase tracking-widest text-[var(--text-muted)]">
-             <span className="w-8 h-[1px] bg-[var(--card-border)]"></span>
-             Advanced Radiomics Workstation
-             <span className="w-8 h-[1px] bg-[var(--card-border)]"></span>
-          </div>
-        </div>
-      </header>
-
-      <main className="space-y-12 pb-20">
-        <div className="relative">
-          <Workstation onAnalyze={handleAnalyze} isLoading={isLoading} results={results} />
-        </div>
-
-        {(results || error) && (
-          <div className="animate-in fade-in slide-in-from-bottom-5 duration-700">
-             <ResultsDisplay data={results} error={error} />
-          </div>
-        )}
-      </main>
-
-      <footer className="glass p-8 text-center relative overflow-hidden">
-        <div className="flex flex-col items-center gap-4 relative z-10">
-           <p className="max-w-4xl text-[var(--foreground)] leading-relaxed font-bold text-sm tracking-wide px-4">
-            <span className="text-[var(--danger-text)] font-playfair mr-2">Disclaimer:</span> 
-            ระบบนี้เป็นเพียงผู้ช่วยวิเคราะห์ผลทางการแพทย์ โปรดใช้ดุลพินิจในการวินิจฉัยร่วมกับบุคลากรทางการแพทย์ทุกครั้ง
-          </p>
-          <div className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest px-4 py-2 border border-[var(--card-border)] rounded-full">
-            LungCare Clinical Engine 3.2.0
-          </div>
-        </div>
-      </footer>
-    </div>
+    </>
   );
 }

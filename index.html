@@ -1,0 +1,770 @@
+```html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LungCare - AI Nodule Analysis System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind Custom Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        hc: {
+                            green: '#769382',
+                            light: '#C0C3B9',
+                            cream: '#F3EFE3',
+                            beige: '#E8DCC4', 
+                            dark: '#4A4C4A',
+                            white: '#FFFFFF'
+                        }
+                    },
+                    fontFamily: {
+                        serif: ['"Playfair Display"', 'serif'],
+                        sans: ['"Sarabun"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #F3EFE3; color: #4A4C4A; overscroll-behavior-y: none; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #C0C3B9; border-radius: 10px;}
+        ::-webkit-scrollbar-thumb:hover { background: #769382; }
+
+        .panel { 
+            background-color: #FFFFFF; 
+            border: 1px solid rgba(192, 195, 185, 0.4); 
+            border-radius: 1.25rem; 
+            box-shadow: 0 4px 20px rgba(118, 147, 130, 0.05);
+        }
+        
+        .canvas-container {
+            display: flex; justify-content: center; align-items: center;
+            background-color: #1a1c1b; border-radius: 1rem;
+            overflow: hidden; min-height: 350px; position: relative;
+            touch-action: none; border: 1px solid #C0C3B9;
+        }
+        canvas { max-width: 100%; height: auto; object-fit: contain; cursor: crosshair; }
+        .seed-marker {
+            position: absolute; width: 10px; height: 10px;
+            background-color: #E8DCC4; border: 2px solid #fff;
+            border-radius: 50%; transform: translate(-50%, -50%);
+            pointer-events: none; z-index: 20;
+            box-shadow: 0 0 8px rgba(0,0,0,0.5);
+            transition: all 0.2s ease;
+        }
+        
+        input[type=range] { -webkit-appearance: none; background: #F3EFE3; border-radius: 8px; height: 6px; border: 1px solid #C0C3B9; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%;
+            background: #769382; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .welcome-leave { opacity: 0; transform: translateY(-20px); pointer-events: none; }
+        
+        .reason-list li {
+            position: relative;
+            padding-left: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .reason-list li::before {
+            content: '\f0da';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            left: 0;
+            top: 2px;
+        }
+    </style>
+</head>
+<body class="pb-10 h-screen w-screen overflow-x-hidden font-sans">
+
+    <!-- ================= WELCOME SCREEN ================= -->
+    <div id="welcomeScreen" class="fixed inset-0 z-[100] bg-hc-cream flex flex-col items-center justify-center transition-all duration-1000 ease-in-out text-hc-dark">
+        <div class="relative z-10 flex flex-col items-center text-center px-6">
+            <div class="mb-6">
+                <i class="fas fa-lungs text-6xl text-hc-green opacity-90"></i>
+            </div>
+            <h1 class="font-serif text-6xl md:text-8xl mb-2 tracking-tight">
+                Lung<span class="text-hc-green italic">Care</span>
+            </h1>
+            <div class="space-y-2 mb-12">
+                <p class="text-2xl md:text-3xl font-serif text-hc-dark/80 tracking-wide uppercase">AI Nodule Analysis</p>
+                <p class="text-hc-dark/60 text-base md:text-lg font-light">ระบบวิเคราะห์และคัดกรองก้อนเนื้อในปอดด้วย AI</p>
+            </div>
+            <button id="startBtn" class="group bg-hc-green text-white font-serif text-lg py-4 px-12 rounded-full shadow-lg shadow-hc-green/20 transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-4">
+                Start AI Analysis
+                <i class="fas fa-chevron-right text-xs group-hover:translate-x-1 transition-transform opacity-70"></i>
+            </button>
+        </div>
+        <div class="absolute bottom-10 flex flex-col items-center gap-1">
+            <span class="text-[10px] text-hc-light font-bold tracking-[0.3em] uppercase">Developed By</span>
+            <span class="text-sm font-serif text-hc-green font-bold tracking-widest italic">LUNGCARE TEAM</span>
+        </div>
+    </div>
+
+    <!-- ================= MAIN APPLICATION ================= -->
+    <nav class="bg-white border-b border-hc-light/30 p-4 sticky top-0 z-50">
+        <div class="max-w-[1400px] mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <i class="fas fa-lungs text-2xl text-hc-green"></i>
+                <div class="flex flex-col leading-tight border-l border-hc-light/50 pl-4">
+                    <h1 class="text-xl font-serif text-hc-dark font-bold tracking-tight">Lung<span class="text-hc-green italic">Care</span></h1>
+                    <span class="text-[9px] uppercase tracking-widest text-hc-light font-bold">AI Analysis System</span>
+                </div>
+            </div>
+            <div class="hidden md:flex items-center gap-6 text-xs font-bold text-hc-light tracking-widest uppercase">
+                <span>Radiomics Workstation</span>
+                <div class="h-4 w-px bg-hc-light/30"></div>
+                <span class="text-hc-green italic"><i class="fas fa-robot mr-1"></i> AI Powered</span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-[1400px] mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-2">
+        
+        <!-- Left Panel: Controls -->
+        <div class="lg:col-span-3 space-y-5">
+            <!-- 01 Image Source -->
+            <div class="panel p-5">
+                <h2 class="text-sm font-serif font-bold mb-4 text-hc-dark flex items-center gap-2 uppercase tracking-wider">
+                    <span class="w-6 h-6 rounded-full bg-hc-cream text-hc-green flex items-center justify-center text-[10px]">01</span>
+                    Image Source
+                </h2>
+                <label for="imageUpload" class="flex flex-col items-center justify-center w-full h-24 border border-dashed border-hc-light rounded-xl cursor-pointer bg-hc-cream/50 hover:bg-hc-cream transition-colors">
+                    <div class="flex flex-col items-center justify-center">
+                        <i class="fas fa-cloud-upload-alt text-xl text-hc-green mb-1"></i>
+                        <p class="text-[10px] text-hc-dark font-bold uppercase tracking-wider">Upload CT Scan</p>
+                    </div>
+                    <input id="imageUpload" type="file" class="hidden" accept="image/*" />
+                </label>
+            </div>
+
+            <!-- 02 Enhancement -->
+            <div class="panel p-5">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-sm font-serif font-bold text-hc-dark flex items-center gap-2 uppercase tracking-wider">
+                        <span class="w-6 h-6 rounded-full bg-hc-cream text-hc-green flex items-center justify-center text-[10px]">02</span>
+                        Enhancement
+                    </h2>
+                    <button id="resetEnhanceBtn" class="text-[10px] font-bold text-hc-light hover:text-hc-green uppercase tracking-widest">Reset</button>
+                </div>
+                <div class="space-y-5">
+                    <div>
+                        <label class="flex justify-between text-[10px] text-hc-dark/60 mb-2 font-bold uppercase tracking-widest">
+                            <span>Brightness</span>
+                            <span id="brightnessVal" class="text-hc-green">0</span>
+                        </label>
+                        <input type="range" id="brightness" min="-100" max="100" value="0" class="w-full">
+                    </div>
+                    <div>
+                        <label class="flex justify-between text-[10px] text-hc-dark/60 mb-2 font-bold uppercase tracking-widest">
+                            <span>Contrast</span>
+                            <span id="contrastVal" class="text-hc-green">0</span>
+                        </label>
+                        <input type="range" id="contrast" min="-100" max="100" value="0" class="w-full">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 03 Segmentation -->
+            <div class="panel p-5">
+                <h2 class="text-sm font-serif font-bold mb-4 text-hc-dark flex items-center gap-2 uppercase tracking-wider">
+                    <span class="w-6 h-6 rounded-full bg-hc-cream text-hc-green flex items-center justify-center text-[10px]">03</span>
+                    Segmentation
+                </h2>
+                <div class="mb-5 space-y-2">
+                    <div id="step1" class="border-l-4 border-hc-green bg-hc-green/5 p-3 rounded-r-lg text-[11px] font-bold text-hc-green tracking-wide">
+                        <i class="fas fa-pencil-alt w-4"></i> 1. DRAW ROI AROUND NODULE
+                    </div>
+                    <div id="step2" class="border-l-4 border-hc-light bg-transparent p-3 rounded-r-lg text-[11px] font-bold text-hc-light tracking-wide">
+                        <i class="fas fa-bullseye w-4"></i> 2. SELECT MULTI-SEEDS
+                    </div>
+                </div>
+                
+                <div class="space-y-5">
+                    <div>
+                        <label class="flex justify-between text-[10px] text-hc-dark/60 mb-2 font-bold uppercase tracking-widest">
+                            <span>Tolerance (ลดถ้าสีลาม)</span>
+                            <span id="toleranceVal" class="text-hc-green">15</span>
+                        </label>
+                        <input type="range" id="tolerance" min="2" max="100" value="15" class="w-full">
+                    </div>
+                    
+                    <!-- Morphology Buttons -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- Erosion -->
+                        <div>
+                            <label class="block text-[9px] text-hc-dark/60 font-bold uppercase tracking-widest mb-1 text-center" title="หดขนาด (ลดส่วนที่ลาม)">Erosion</label>
+                            <div class="flex items-center justify-between bg-hc-cream/50 border border-hc-light/30 rounded-lg p-1">
+                                <button type="button" class="w-6 h-6 rounded bg-white text-hc-dark shadow-sm hover:bg-hc-light/50 transition-colors flex items-center justify-center" onclick="updateMorph('erosion', -1)"><i class="fas fa-minus text-[10px]"></i></button>
+                                <span id="erosionVal" class="text-xs font-bold text-hc-green w-4 text-center">0</span>
+                                <button type="button" class="w-6 h-6 rounded bg-white text-hc-dark shadow-sm hover:bg-hc-light/50 transition-colors flex items-center justify-center" onclick="updateMorph('erosion', 1)"><i class="fas fa-plus text-[10px]"></i></button>
+                            </div>
+                        </div>
+                        <!-- Dilation -->
+                        <div>
+                            <label class="block text-[9px] text-hc-dark/60 font-bold uppercase tracking-widest mb-1 text-center" title="ขยายขนาด (เติมส่วนที่แหว่ง)">Dilation</label>
+                            <div class="flex items-center justify-between bg-hc-cream/50 border border-hc-light/30 rounded-lg p-1">
+                                <button type="button" class="w-6 h-6 rounded bg-white text-hc-dark shadow-sm hover:bg-hc-light/50 transition-colors flex items-center justify-center" onclick="updateMorph('dilation', -1)"><i class="fas fa-minus text-[10px]"></i></button>
+                                <span id="dilationVal" class="text-xs font-bold text-hc-green w-4 text-center">0</span>
+                                <button type="button" class="w-6 h-6 rounded bg-white text-hc-dark shadow-sm hover:bg-hc-light/50 transition-colors flex items-center justify-center" onclick="updateMorph('dilation', 1)"><i class="fas fa-plus text-[10px]"></i></button>
+                            </div>
+                        </div>
+                        <!-- Opening -->
+                        <div>
+                            <label class="block text-[9px] text-hc-dark/60 font-bold uppercase tracking-widest mb-1 text-center" title="หดแล้วขยาย (ลบจุดรบกวนขอบนอก)">Opening</label>
+                            <div class="flex items-center justify-between bg-hc-cream/50 border border-hc-light/30 rounded-lg p-1">
+                                <button type="button" class="w-6 h-6 rounded bg-white text-hc-dark shadow-sm hover:bg-hc-light/50 transition-colors flex items-center justify-center" onclick="updateMorph('opening', -1)"><i class="fas fa-minus text-[10px]"></i></button>
+                                <span id="openingVal" class="text-xs font-bold text-hc-green w-4 text-center">0</span>
+                                <button type="button" class="w-6 h-6 rounded bg-white text-hc-dark shadow-sm hover:bg-hc-light/50 transition-colors flex items-center justify-center" onclick="updateMorph('opening', 1)"><i class="fas fa-plus text-[10px]"></i></button>
+                            </div>
+                        </div>
+                        <!-- Closing -->
+                        <div>
+                            <label class="block text-[9px] text-hc-dark/60 font-bold uppercase tracking-widest mb-1 text-center" title="ขยายแล้วหด (อุดรูรั่วภายในก้อน)">Closing</label>
+                            <div class="flex items-center justify-between bg-hc-cream/50 border border-hc-light/30 rounded-lg p-1">
+                                <button type="button" class="w-6 h-6 rounded bg-white text-hc-dark shadow-sm hover:bg-hc-light/50 transition-colors flex items-center justify-center" onclick="updateMorph('closing', -1)"><i class="fas fa-minus text-[10px]"></i></button>
+                                <span id="closingVal" class="text-xs font-bold text-hc-green w-4 text-center">0</span>
+                                <button type="button" class="w-6 h-6 rounded bg-white text-hc-dark shadow-sm hover:bg-hc-light/50 transition-colors flex items-center justify-center" onclick="updateMorph('closing', 1)"><i class="fas fa-plus text-[10px]"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tools -->
+                    <div class="flex items-center pt-3 justify-between border-t border-hc-light/20 mt-2">
+                        <div class="flex items-center">
+                            <input id="showOverlay" type="checkbox" checked class="w-4 h-4 rounded text-hc-green border-hc-light/50 focus:ring-hc-green">
+                            <label for="showOverlay" class="ml-2 text-[10px] text-hc-dark/70 font-bold uppercase tracking-widest">แสดง Mask สีแดง</label>
+                        </div>
+                        <div class="flex gap-1.5">
+                            <button id="undoSeedBtn" class="text-[9px] font-black bg-hc-light/30 hover:bg-hc-light/50 text-hc-dark px-2 py-1 rounded uppercase tracking-tighter hidden transition-colors" title="ย้อนกลับจุดล่าสุด">
+                                <i class="fas fa-undo"></i> Undo
+                            </button>
+                            <button id="clearSeedsBtn" class="text-[9px] font-black bg-hc-beige hover:bg-hc-beige/80 text-hc-dark px-2 py-1 rounded uppercase tracking-tighter hidden transition-colors" title="ลบจุดอ้างอิงทั้งหมด">
+                                Clear All
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <button id="resetDrawBtn" class="mt-6 w-full bg-hc-cream hover:bg-hc-light/30 text-hc-dark text-[10px] font-bold uppercase tracking-widest py-3 rounded-xl transition duration-200 border border-hc-light/50">
+                    <i class="fas fa-undo-alt mr-1"></i> New Scan
+                </button>
+            </div>
+        </div>
+
+        <!-- Center Panel: Canvases -->
+        <div class="lg:col-span-5 flex flex-col gap-6">
+            <div class="panel p-4 flex-grow flex flex-col">
+                <div class="flex justify-between items-center mb-3 px-1">
+                    <h3 class="text-xs font-bold text-hc-dark/40 uppercase tracking-widest">Workspace</h3>
+                    <span class="text-[9px] bg-hc-cream px-2 py-1 rounded text-hc-green font-bold tracking-[0.2em] uppercase">Original</span>
+                </div>
+                <div class="canvas-container flex-grow" id="sourceContainer">
+                    <span id="uploadPrompt" class="text-hc-light/50 text-[10px] font-bold uppercase tracking-[0.2em] absolute z-10 pointer-events-none flex flex-col items-center">
+                        <i class="fas fa-plus-circle text-2xl mb-2 opacity-30"></i>
+                        Import Image Data
+                    </span>
+                    <canvas id="canvasOriginal"></canvas>
+                    <div id="markersContainer"></div>
+                </div>
+            </div>
+            
+            <div class="panel p-4 flex-grow flex flex-col">
+                <div class="flex justify-between items-center mb-3 px-1">
+                    <h3 class="text-xs font-bold text-hc-dark/40 uppercase tracking-widest">AI Mask</h3>
+                    <span class="text-[9px] bg-hc-cream px-2 py-1 rounded text-hc-green font-bold tracking-[0.2em] uppercase">Result</span>
+                </div>
+                <div class="canvas-container flex-grow">
+                    <canvas id="canvasResult"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Advanced Classification -->
+        <div class="lg:col-span-4 panel flex flex-col h-fit overflow-hidden">
+            <div class="bg-hc-cream/50 p-5 border-b border-hc-light/30">
+                <h2 class="text-sm font-serif font-bold text-hc-dark flex items-center gap-2 uppercase tracking-wider">
+                    <span class="w-6 h-6 rounded-full bg-hc-cream text-hc-green flex items-center justify-center text-[10px]">04</span>
+                    AI Diagnostic Report
+                </h2>
+            </div>
+
+            <div id="emptyAnalysis" class="flex-grow flex flex-col items-center justify-center text-hc-light text-sm text-center py-16 opacity-50 px-4">
+                <i class="fas fa-robot text-5xl mb-4"></i>
+                <p class="font-bold tracking-widest uppercase text-[10px] leading-relaxed">Waiting for AI to process<br>nodule data</p>
+            </div>
+
+            <div id="analysisResult" class="hidden flex-col p-5">
+                
+                <!-- Risk Banner -->
+                <div id="riskBanner" class="p-6 rounded-2xl mb-6 text-center border relative overflow-hidden transition-colors duration-500">
+                    <div class="relative z-10">
+                        <div class="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70 mb-2" id="riskTypeLabel">Prediction</div>
+                        <div class="font-serif text-4xl font-bold mb-1" id="riskConclusion">Malignant</div>
+                        <div class="text-xs font-bold tracking-[0.1em] uppercase opacity-70 mt-2">Confidence: <span id="riskPercentage" class="text-lg">0%</span></div>
+                    </div>
+                </div>
+
+                <!-- AI Reasoning Section -->
+                <div class="mb-6">
+                    <h3 class="text-[11px] text-hc-dark font-bold uppercase tracking-widest mb-3 border-b border-hc-light/20 pb-2">
+                        <i class="fas fa-list-ul text-hc-green mr-1"></i> AI Reasoning (เหตุผลประกอบ)
+                    </h3>
+                    <ul id="aiReasonsList" class="reason-list text-sm text-hc-dark/80 space-y-2 leading-relaxed">
+                    </ul>
+                </div>
+
+                <!-- Extracted Features -->
+                <h3 class="text-[11px] text-hc-dark font-bold uppercase tracking-widest mb-3 border-b border-hc-light/20 pb-2">
+                    <i class="fas fa-microscope text-hc-green mr-1"></i> Radiomics Data
+                </h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-hc-cream/30 p-3 rounded-xl border border-hc-light/20">
+                        <div class="text-[9px] font-bold text-hc-dark/60 uppercase tracking-wider mb-1">Area (px²)</div>
+                        <span id="featArea" class="font-black text-hc-dark text-base">0</span>
+                    </div>
+                    <div class="bg-hc-cream/30 p-3 rounded-xl border border-hc-light/20">
+                        <div class="text-[9px] font-bold text-hc-dark/60 uppercase tracking-wider mb-1">Circularity</div>
+                        <span id="featCirc" class="font-black text-hc-dark text-base">0.00</span>
+                    </div>
+                    <div class="bg-hc-cream/30 p-3 rounded-xl border border-hc-light/20">
+                        <div class="text-[9px] font-bold text-hc-dark/60 uppercase tracking-wider mb-1">Mean Density</div>
+                        <span id="featMean" class="font-black text-hc-dark text-base">0.0</span>
+                    </div>
+                    <div class="bg-hc-cream/30 p-3 rounded-xl border border-hc-light/20">
+                        <div class="text-[9px] font-bold text-hc-dark/60 uppercase tracking-wider mb-1">Heterogeneity</div>
+                        <span id="featStd" class="font-black text-hc-dark text-base">0.00</span>
+                    </div>
+                </div>
+                
+                <div class="mt-8 text-center pt-4 border-t border-hc-light/20">
+                    <span class="text-[9px] text-hc-light font-bold tracking-[0.3em] uppercase">LungCare AI Analytics v1.2</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Welcome Logic
+        document.getElementById('startBtn').addEventListener('click', () => {
+            document.getElementById('welcomeScreen').classList.add('welcome-leave');
+            setTimeout(() => {
+                document.getElementById('welcomeScreen').style.display = 'none';
+                document.body.classList.remove('overflow-x-hidden', 'h-screen', 'w-screen'); 
+            }, 1000); 
+        });
+
+        // State & Logic
+        let rawImageObj = new Image();
+        let isImageLoaded = false;
+        let rawPixelData = null;      
+        let enhancedPixelData = null; 
+        const MAX_WIDTH = 600;
+
+        let currentMode = 'DRAW'; 
+        let isDrawing = false;
+        let roiPoints = [];
+        let roiMask = null;
+        let seedPoints = []; 
+
+        let currentRiskLevel = 'low'; 
+
+        // Morphology States
+        let morphState = {
+            erosion: 0,
+            dilation: 0,
+            opening: 0,
+            closing: 0
+        };
+
+        const imageUpload = document.getElementById('imageUpload');
+        const canvasOriginal = document.getElementById('canvasOriginal');
+        const canvasResult = document.getElementById('canvasResult');
+        const ctxOriginal = canvasOriginal.getContext('2d', { willReadFrequently: true });
+        const ctxResult = canvasResult.getContext('2d');
+        const sourceContainer = document.getElementById('sourceContainer');
+        const markersContainer = document.getElementById('markersContainer');
+
+        const bSlider = document.getElementById('brightness');
+        const cSlider = document.getElementById('contrast');
+        const resetEnhanceBtn = document.getElementById('resetEnhanceBtn');
+        const tSlider = document.getElementById('tolerance');
+        
+        const showOverlayCb = document.getElementById('showOverlay');
+        const resetDrawBtn = document.getElementById('resetDrawBtn');
+        const undoSeedBtn = document.getElementById('undoSeedBtn');
+        const clearSeedsBtn = document.getElementById('clearSeedsBtn');
+        const step1UI = document.getElementById('step1');
+        const step2UI = document.getElementById('step2');
+
+        const emptyAnalysis = document.getElementById('emptyAnalysis');
+        const analysisResult = document.getElementById('analysisResult');
+
+        // Morphology Update Function
+        window.updateMorph = function(type, delta) {
+            let newVal = morphState[type] + delta;
+            if (newVal >= 0 && newVal <= 5) {
+                morphState[type] = newVal;
+                document.getElementById(type + 'Val').innerText = newVal;
+                processSegmentation();
+            }
+        };
+
+        // Handlers
+        bSlider.addEventListener('input', (e) => { document.getElementById('brightnessVal').innerText = e.target.value; applyImageEnhancement(); });
+        cSlider.addEventListener('input', (e) => { document.getElementById('contrastVal').innerText = e.target.value; applyImageEnhancement(); });
+        resetEnhanceBtn.addEventListener('click', () => { 
+            bSlider.value = 0; cSlider.value = 0; 
+            document.getElementById('brightnessVal').innerText = "0"; document.getElementById('contrastVal').innerText = "0";
+            applyImageEnhancement(); 
+        });
+        
+        tSlider.addEventListener('input', (e) => { document.getElementById('toleranceVal').innerText = e.target.value; processSegmentation(); });
+        
+        showOverlayCb.addEventListener('change', processSegmentation);
+        resetDrawBtn.addEventListener('click', resetROI);
+        
+        undoSeedBtn.addEventListener('click', () => {
+            if (seedPoints.length > 0) {
+                seedPoints.pop(); 
+                renderAllMarkers();
+                if (seedPoints.length > 0) {
+                    processSegmentation(); 
+                } else {
+                    hideAnalysis(); 
+                    redrawOriginalCanvas(); 
+                    clearResultCanvas();
+                }
+            }
+        });
+
+        clearSeedsBtn.addEventListener('click', () => {
+            seedPoints = []; renderAllMarkers();
+            hideAnalysis(); redrawOriginalCanvas(); clearResultCanvas();
+        });
+
+        imageUpload.addEventListener('change', function(e) {
+            const file = e.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                rawImageObj.onload = function() {
+                    document.getElementById('uploadPrompt').style.display = 'none';
+                    let width = rawImageObj.width; let height = rawImageObj.height;
+                    if (width > MAX_WIDTH) { height = Math.floor(height * (MAX_WIDTH / width)); width = MAX_WIDTH; }
+                    canvasOriginal.width = width; canvasOriginal.height = height;
+                    canvasResult.width = width; canvasResult.height = height;
+                    ctxOriginal.drawImage(rawImageObj, 0, 0, width, height);
+                    rawPixelData = ctxOriginal.getImageData(0, 0, width, height);
+                    isImageLoaded = true; resetEnhanceBtn.click(); 
+                }
+                rawImageObj.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        });
+
+        function applyImageEnhancement() {
+            if (!isImageLoaded || !rawPixelData) return;
+            const w = canvasOriginal.width, h = canvasOriginal.height;
+            const b = parseInt(bSlider.value), c = parseInt(cSlider.value);
+            enhancedPixelData = new ImageData(new Uint8ClampedArray(rawPixelData.data), w, h);
+            const data = enhancedPixelData.data;
+            const factor = (259 * (c + 255)) / (255 * (259 - c));
+            for (let i = 0; i < data.length; i += 4) {
+                data[i] = Math.max(0, Math.min(255, factor * (data[i] - 128) + 128 + b));
+                data[i+1] = Math.max(0, Math.min(255, factor * (data[i+1] - 128) + 128 + b));
+                data[i+2] = Math.max(0, Math.min(255, factor * (data[i+2] - 128) + 128 + b));
+            }
+            redrawOriginalCanvas();
+            if (seedPoints.length > 0) processSegmentation();
+        }
+
+        function getPointerPos(clientX, clientY) {
+            const rect = canvasOriginal.getBoundingClientRect();
+            const scaleX = canvasOriginal.width / rect.width;
+            const scaleY = canvasOriginal.height / rect.height;
+            return { x: Math.floor((clientX - rect.left) * scaleX), y: Math.floor((clientY - rect.top) * scaleY), rawX: clientX, rawY: clientY };
+        }
+
+        function handlePointerDown(e) {
+            if (!isImageLoaded) return;
+            if (e.type === 'touchstart') e.preventDefault(); 
+            let clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+            let clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+            const pos = getPointerPos(clientX, clientY);
+            
+            if (currentMode === 'DRAW') { 
+                isDrawing = true; roiPoints = [{ x: pos.x, y: pos.y }]; redrawOriginalCanvas(); 
+            } else if (currentMode === 'SEED') {
+                if (roiMask && roiMask[pos.y * canvasOriginal.width + pos.x] === 0) return; 
+                
+                const markerX = pos.rawX - sourceContainer.getBoundingClientRect().left;
+                const markerY = pos.rawY - sourceContainer.getBoundingClientRect().top;
+                
+                seedPoints.push({ x: pos.x, y: pos.y, markerX: markerX, markerY: markerY });
+                renderAllMarkers();
+                processSegmentation();
+            }
+        }
+
+        function handlePointerMove(e) {
+            if (!isDrawing || currentMode !== 'DRAW') return;
+            let clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+            let clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+            const pos = getPointerPos(clientX, clientY);
+            roiPoints.push({ x: pos.x, y: pos.y }); redrawOriginalCanvas();
+        }
+
+        function handlePointerUp() {
+            if (!isDrawing || currentMode !== 'DRAW') return;
+            isDrawing = false;
+            if (roiPoints.length > 5) {
+                roiPoints.push({ x: roiPoints[0].x, y: roiPoints[0].y });
+                generateROIMask(); currentMode = 'SEED'; updateStepUI(); redrawOriginalCanvas();
+            } else { roiPoints = []; redrawOriginalCanvas(); }
+        }
+
+        canvasOriginal.addEventListener('mousedown', handlePointerDown);
+        canvasOriginal.addEventListener('mousemove', handlePointerMove);
+        window.addEventListener('mouseup', handlePointerUp);
+        canvasOriginal.addEventListener('touchstart', handlePointerDown, { passive: false });
+        canvasOriginal.addEventListener('touchmove', handlePointerMove, { passive: false });
+        canvasOriginal.addEventListener('touchend', handlePointerUp, { passive: false });
+
+        function addMarkerVisual(x, y) {
+            const marker = document.createElement('div'); marker.className = 'seed-marker';
+            marker.style.left = x + 'px'; marker.style.top = y + 'px';
+            markersContainer.appendChild(marker);
+        }
+        function clearMarkers() { markersContainer.innerHTML = ''; }
+        function renderAllMarkers() {
+            clearMarkers();
+            seedPoints.forEach(p => { addMarkerVisual(p.markerX, p.markerY); });
+            
+            if (seedPoints.length > 0) {
+                clearSeedsBtn.classList.remove('hidden');
+                undoSeedBtn.classList.remove('hidden');
+            } else {
+                clearSeedsBtn.classList.add('hidden');
+                undoSeedBtn.classList.add('hidden');
+            }
+        }
+
+        function resetROI() {
+            roiPoints = []; roiMask = null; seedPoints = []; currentMode = 'DRAW'; 
+            renderAllMarkers(); updateStepUI(); hideAnalysis();
+            if(isImageLoaded) { redrawOriginalCanvas(); clearResultCanvas(); }
+        }
+
+        function updateStepUI() {
+            if (currentMode === 'DRAW') {
+                step1UI.className = "border-l-4 border-hc-green bg-hc-green/5 p-3 rounded-r-lg text-[11px] font-bold text-hc-green tracking-wide";
+                step2UI.className = "border-l-4 border-hc-light bg-transparent p-3 rounded-r-lg text-[11px] font-bold text-hc-light tracking-wide";
+            } else {
+                step1UI.className = "border-l-4 border-hc-light bg-transparent p-3 rounded-r-lg text-[11px] font-bold text-hc-light tracking-wide";
+                step2UI.className = "border-l-4 border-hc-green bg-hc-green/5 p-3 rounded-r-lg text-[11px] font-bold text-hc-green tracking-wide";
+            }
+        }
+
+        function redrawOriginalCanvas() {
+            if (!isImageLoaded || !enhancedPixelData) return;
+            ctxOriginal.putImageData(enhancedPixelData, 0, 0);
+            if (roiPoints.length > 0) {
+                ctxOriginal.beginPath(); ctxOriginal.moveTo(roiPoints[0].x, roiPoints[0].y);
+                for (let i = 1; i < roiPoints.length; i++) ctxOriginal.lineTo(roiPoints[i].x, roiPoints[i].y);
+                if (currentMode === 'SEED') {
+                    ctxOriginal.closePath(); ctxOriginal.fillStyle = 'rgba(232, 220, 196, 0.2)'; 
+                    ctxOriginal.fill(); ctxOriginal.strokeStyle = '#E8DCC4'; ctxOriginal.setLineDash([6, 6]); ctxOriginal.lineWidth = 1.5;
+                } else { ctxOriginal.strokeStyle = '#769382'; ctxOriginal.setLineDash([]); ctxOriginal.lineWidth = 2.5; }
+                ctxOriginal.stroke(); ctxOriginal.setLineDash([]);
+            }
+        }
+
+        function generateROIMask() {
+            const w = canvasOriginal.width, h = canvasOriginal.height;
+            const offC = document.createElement('canvas'); offC.width = w; offC.height = h;
+            const offCtx = offC.getContext('2d');
+            offCtx.fillStyle = '#000'; offCtx.fillRect(0, 0, w, h);
+            offCtx.beginPath(); offCtx.moveTo(roiPoints[0].x, roiPoints[0].y);
+            for (let i = 1; i < roiPoints.length; i++) offCtx.lineTo(roiPoints[i].x, roiPoints[i].y);
+            offCtx.closePath(); offCtx.fillStyle = '#fff'; offCtx.fill();
+            const maskData = offCtx.getImageData(0, 0, w, h).data;
+            roiMask = new Uint8Array(w * h);
+            for (let i = 0; i < w * h; i++) roiMask[i] = maskData[i * 4] > 128 ? 1 : 0;
+        }
+
+        function clearResultCanvas() { ctxResult.clearRect(0, 0, canvasResult.width, canvasResult.height); if(enhancedPixelData) ctxResult.putImageData(enhancedPixelData, 0, 0); }
+
+        function processSegmentation() {
+            if (!isImageLoaded || seedPoints.length === 0 || !enhancedPixelData || !roiMask) return;
+            const w = canvasOriginal.width, h = canvasOriginal.height;
+            const data = enhancedPixelData.data; const tolerance = parseInt(tSlider.value);
+            let mask = new Uint8Array(w * h); let stack = []; let seedIntensities = [];
+            
+            seedPoints.forEach(p => {
+                const sIdx = (p.y * w + p.x) * 4;
+                seedIntensities.push(0.299*data[sIdx] + 0.587*data[sIdx+1] + 0.114*data[sIdx+2]);
+                mask[p.y * w + p.x] = 1; stack.push(p.x, p.y);
+            });
+            const dx = [0, 0, -1, 1], dy = [-1, 1, 0, 0];
+            while (stack.length > 0) {
+                const cy = stack.pop(), cx = stack.pop();
+                for (let i = 0; i < 4; i++) {
+                    const nx = cx + dx[i], ny = cy + dy[i];
+                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                        if (roiMask[ny * w + nx] === 0) continue; 
+                        const nIdx = ny * w + nx;
+                        if (mask[nIdx] === 0) {
+                            const pIdx = nIdx * 4;
+                            const nGray = 0.299*data[pIdx] + 0.587*data[pIdx+1] + 0.114*data[pIdx+2];
+                            let matchFound = false;
+                            for(let j=0; j<seedIntensities.length; j++) { if (Math.abs(nGray - seedIntensities[j]) <= tolerance) { matchFound = true; break; } }
+                            if (matchFound) { 
+                                mask[nIdx] = 1; stack.push(nx, ny); 
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Apply Morphology from button states
+            const eIter = morphState.erosion;
+            const dIter = morphState.dilation;
+            const oIter = morphState.opening;
+            const cIter = morphState.closing;
+
+            for (let i = 0; i < eIter; i++) mask = morph(mask, w, h, 0);
+            for (let i = 0; i < dIter; i++) mask = morph(mask, w, h, 1);
+            
+            for (let i = 0; i < oIter; i++) mask = morph(mask, w, h, 0);
+            for (let i = 0; i < oIter; i++) mask = morph(mask, w, h, 1);
+            
+            for (let i = 0; i < cIter; i++) mask = morph(mask, w, h, 1);
+            for (let i = 0; i < cIter; i++) mask = morph(mask, w, h, 0);
+
+            extractAdvancedRadiomics(mask, w, h, data); 
+            drawMaskResult(mask, w, h); 
+        }
+
+        function morph(src, w, h, type) {
+            let dst = new Uint8Array(src.length);
+            for (let y = 1; y < h-1; y++) for (let x = 1; x < w-1; x++) {
+                let found = type === 0 ? 1 : 0;
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (type === 0 && src[(y+dy)*w + (x+dx)] === 0) found = 0;
+                    if (type === 1 && src[(y+dy)*w + (x+dx)] === 1) found = 1;
+                }
+                dst[y*w+x] = found;
+            }
+            return dst;
+        }
+
+        function extractAdvancedRadiomics(mask, w, h, pixelData) {
+            let area = 0, perimeter = 0, intensities = [];
+            for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+                let idx = y * w + x;
+                if (mask[idx] === 1) {
+                    area++;
+                    if (x===0 || x===w-1 || y===0 || y===h-1 || mask[y*w+(x-1)]===0 || mask[y*w+(x+1)]===0 || mask[(y-1)*w+x]===0 || mask[(y+1)*w+x]===0) perimeter++;
+                    const pIdx = idx * 4; intensities.push(0.299*pixelData[pIdx] + 0.587*pixelData[pIdx+1] + 0.114*pixelData[pIdx+2]);
+                }
+            }
+            if (area < 10) { hideAnalysis(); return; }
+            let circ = (perimeter > 0) ? Math.min(1.0, (4 * Math.PI * area) / (perimeter * perimeter)) : 0;
+            let mean = intensities.reduce((a, b) => a + b, 0) / area;
+            let std = Math.sqrt(intensities.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / area);
+            let probability = 1 / (1 + Math.exp(-(-4.5 + (area/1000)*1.8 + (1.0-circ)*3.5 + (std/30)*1.5)));
+            
+            updateAIReport(area, circ, mean, std, (probability*100).toFixed(1));
+        }
+
+        function updateAIReport(area, circ, mean, std, prob) {
+            emptyAnalysis.style.display = 'none'; 
+            analysisResult.style.display = 'flex';
+            
+            document.getElementById('featArea').innerText = area.toLocaleString();
+            document.getElementById('featCirc').innerText = circ.toFixed(2);
+            document.getElementById('featMean').innerText = mean.toFixed(1);
+            document.getElementById('featStd').innerText = std.toFixed(2);
+            document.getElementById('riskPercentage').innerText = prob + "%";
+            
+            const banner = document.getElementById('riskBanner');
+            const concl = document.getElementById('riskConclusion');
+            const reasonsList = document.getElementById('aiReasonsList');
+            reasonsList.innerHTML = ''; 
+
+            let reasons = [];
+
+            if (prob >= 65) { 
+                currentRiskLevel = 'high';
+                banner.className = "p-6 rounded-2xl mb-6 text-center border bg-[#FDF6F6] border-[#F2D6D6] text-[#A74A4A]"; 
+                concl.innerText = "Malignant"; 
+                if (area > 1200) reasons.push("ขนาดก้อนเนื้อใหญ่เกินเกณฑ์เฝ้าระวัง (Size > 1.5cm)");
+                if (circ < 0.65) reasons.push("ขอบเขตไม่สม่ำเสมอ หรือมีลักษณะเป็นแฉก (Spiculated margins)");
+                if (std > 20) reasons.push("ความหนาแน่นสีไม่สม่ำเสมอ มีส่วนผสมทึบและโปร่ง (Heterogeneous)");
+                if (reasons.length === 0) reasons.push("องค์ประกอบโดยรวมจัดอยู่ในกลุ่มเสี่ยงสูง (High overall risk)");
+            } else if (prob >= 30) { 
+                currentRiskLevel = 'medium';
+                banner.className = "p-6 rounded-2xl mb-6 text-center border bg-[#FCF9F2] border-[#E8DFCC] text-[#8C7343]"; 
+                concl.innerText = "Indeterminate"; 
+                if (area > 600 && area <= 1200) reasons.push("ขนาดก้อนเนื้อปานกลาง ต้องติดตามผล (Moderate size)");
+                if (circ >= 0.65 && circ < 0.8) reasons.push("ขอบเขตค่อนข้างเรียบแต่มีรอยหยักบางส่วน (Lobulated margins)");
+                if (std > 15 && std <= 20) reasons.push("พบความหนาแน่นกึ่งทึบกึ่งโปร่งเล็กน้อย (Mixed density)");
+                if (reasons.length === 0) reasons.push("ลักษณะก้ำกึ่ง แนะนำให้แพทย์ตรวจเพิ่มเติม (Borderline features)");
+            } else { 
+                currentRiskLevel = 'low';
+                banner.className = "p-6 rounded-2xl mb-6 text-center border bg-hc-cream border-hc-light text-hc-green"; 
+                concl.innerText = "Benign"; 
+                if (area <= 600) reasons.push("ขนาดก้อนเนื้อเล็ก (Micro-nodule)");
+                if (circ >= 0.8) reasons.push("ขอบเขตเรียบและกลมชัดเจน (Smooth and well-defined margins)");
+                if (std <= 15) reasons.push("ความหนาแน่นสม่ำเสมอเป็นเนื้อเดียวกัน (Homogeneous/Solid texture)");
+                if (reasons.length === 0) reasons.push("ลักษณะโดยรวมเป็นไปในทางก้อนเนื้อดี (Typical benign features)");
+            }
+
+            reasons.forEach(reason => {
+                const li = document.createElement('li');
+                li.innerText = reason;
+                reasonsList.appendChild(li);
+            });
+        }
+
+        function drawMaskResult(mask, w, h) {
+            const data = enhancedPixelData.data; 
+            const overlay = showOverlayCb.checked;
+            const resImg = ctxResult.createImageData(w, h); const rData = resImg.data;
+            for (let i = 0; i < mask.length; i++) {
+                const p = i * 4;
+                if (overlay) {
+                    if (mask[i] === 1) { 
+                        rData[p] = Math.min(255, data[p] + 80); rData[p+1] = data[p+1]*0.5; rData[p+2] = data[p+2]*0.5; 
+                    } else { 
+                        rData[p] = data[p]; rData[p+1] = data[p+1]; rData[p+2] = data[p+2]; 
+                    }
+                } else {
+                    const v = mask[i] === 1 ? 255 : 0;
+                    rData[p] = v; rData[p+1] = v; rData[p+2] = v;
+                }
+                rData[p+3] = 255;
+            }
+            ctxResult.putImageData(resImg, 0, 0);
+        }
+
+        function hideAnalysis() { emptyAnalysis.style.display = 'flex'; analysisResult.style.display = 'none'; }
+    </script>
+</body>
+</html>
+
+
+```
