@@ -12,6 +12,18 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
     const [showOverlay, setShowOverlay] = useState(true);
     const [statusText, setStatusText] = useState('กรุณาอัพโหลดภาพ CT Scan');
 
+    // Enhancement state
+    const [brightness, setBrightness] = useState(0);
+    const [contrast, setContrast] = useState(0);
+
+    // Morphology state
+    const [erosionIters, setErosionIters] = useState(0);
+    const [dilationIters, setDilationIters] = useState(0);
+    const [openingIters, setOpeningIters] = useState(0);
+    const [closingIters, setClosingIters] = useState(0);
+    const baseBinaryRef = useRef(null);
+    const boundsRef = useRef({ minX: 0, minY: 0, maxX: 512, maxY: 512 });
+
     // Radiomics state
     const [radiomicsFeatures, setRadiomicsFeatures] = useState({
         area: 0, circularity: 0, meanDensity: 0, heterogeneity: 0
@@ -54,6 +66,13 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
                     setPoints([]);
                     setSeeds([]);
                     setSegmentationStep(0);
+                    setBrightness(0);
+                    setContrast(0);
+                    setErosionIters(0);
+                    setDilationIters(0);
+                    setOpeningIters(0);
+                    setClosingIters(0);
+                    baseBinaryRef.current = null;
                     setStatusText('ภาพพร้อมใช้งาน กรุณาวาดขอบเขต (Vector ROI)');
                     resetRadiomics();
                 };
@@ -63,56 +82,10 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
         }
     };
 
-    const applyContrast = () => {
-        if (!image) return;
-        const ctx = getCtx(originalCanvasRef);
-        ctx.drawImage(image, 0, 0, 512, 512);
-        const imgData = ctx.getImageData(0, 0, 512, 512);
-        const data = imgData.data;
-        const factor = (259 * (128 + 255)) / (255 * (259 - 128));
-        for (let i = 0; i < data.length; i += 4) {
-            data[i] = clamp(factor * (data[i] - 128) + 128);
-            data[i + 1] = clamp(factor * (data[i + 1] - 128) + 128);
-            data[i + 2] = clamp(factor * (data[i + 2] - 128) + 128);
-        }
-        ctx.putImageData(imgData, 0, 0);
-        setStatusText('ปรับความชัดเจน (Contrast Enhanced) เรียบร้อย');
-    };
-
-    const applyEqualization = () => {
-        if (!image) return;
-        const ctx = getCtx(originalCanvasRef);
-        ctx.drawImage(image, 0, 0, 512, 512);
-        const imgData = ctx.getImageData(0, 0, 512, 512);
-        const data = imgData.data;
-
-        // Histogram equalization on grayscale
-        let hist = new Array(256).fill(0);
-        for(let i=0; i<data.length; i+=4) {
-            let gray = Math.round(0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]);
-            hist[gray]++;
-        }
-        let cdf = new Array(256).fill(0);
-        cdf[0] = hist[0];
-        for(let i=1; i<256; i++) cdf[i] = cdf[i-1] + hist[i];
-        let cdfMin = cdf.find(x => x > 0) || 0;
-        const total = 512 * 512;
-        
-        let map = new Array(256);
-        for(let i=0; i<256; i++) {
-            map[i] = Math.round(((cdf[i] - cdfMin) / (total - cdfMin)) * 255);
-        }
-
-        for (let i = 0; i < data.length; i += 4) {
-            let gray = Math.round(0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]);
-            let mapped = map[gray];
-            data[i] = mapped;
-            data[i + 1] = mapped;
-            data[i + 2] = mapped;
-        }
-        ctx.putImageData(imgData, 0, 0);
-        setStatusText('ปรับสมดุลแสง (Equalization) เรียบร้อย');
-    };
+    // Effect for Image Enhancement
+    useEffect(() => {
+        if (!isDrawing) redrawOriginalCanvas();
+    }, [brightness, contrast]);
 
     // --- Interactive Tools ---
     const handleCanvasMouseDown = (e) => {
@@ -169,8 +142,22 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
     const redrawOriginalCanvas = (currentPoints = points) => {
         if (!image) return;
         const ctx = getCtx(originalCanvasRef);
-        // Redraw image
+        
+        // Enhance: draw image first
         ctx.drawImage(image, 0, 0, 512, 512);
+
+        // Apply Brightness & Contrast
+        if (brightness !== 0 || contrast !== 0) {
+            const imgData = ctx.getImageData(0, 0, 512, 512);
+            const data = imgData.data;
+            const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+            for (let i = 0; i < data.length; i += 4) {
+                data[i] = clamp(factor * (data[i] + brightness - 128) + 128);
+                data[i + 1] = clamp(factor * (data[i + 1] + brightness - 128) + 128);
+                data[i + 2] = clamp(factor * (data[i + 2] + brightness - 128) + 128);
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
 
         // Draw ROI
         if (currentPoints.length > 0) {
@@ -278,7 +265,11 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
             }
         });
 
-        updateResultCanvasAndMetrics(segmented, minX, minY, maxX, maxY);
+        // Save base state
+        baseBinaryRef.current = segmented;
+        boundsRef.current = { minX, minY, maxX, maxY };
+
+        applyMorphologyPipeline();
     };
 
     const updateResultCanvasAndMetrics = (segmentedBinary, minX, minY, maxX, maxY) => {
@@ -359,27 +350,11 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
     };
 
     // Morphology wrappers
-    const applyMorphology = (operation) => {
-        if(seeds.length === 0) return;
-        setStatusText(`Running mathematical morphology: ${operation}...`);
+    const applyMorphologyPipeline = () => {
+        if (!baseBinaryRef.current) return;
         
-        // Read current result binary
-        const resCtx = getCtx(resultCanvasRef);
-        const currentData = resCtx.getImageData(0, 0, 512, 512).data;
-        let binary = new Uint8Array(512 * 512);
-
-        let minX = 512, minY = 512, maxX = 0, maxY = 0; // recalculate bounding
-
-        for(let i=0; i<512*512; i++) {
-            if(currentData[i*4+3] > 0 && currentData[i*4] === 167) { 
-                binary[i] = 255; 
-                let x = i % 512; let y = Math.floor(i / 512);
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
-            }
-        }
+        let { minX, minY, maxX, maxY } = boundsRef.current;
+        let binary = new Uint8Array(baseBinaryRef.current);
         
         // Pad
         minX = Math.max(0, minX - 5); minY = Math.max(0, minY - 5);
@@ -414,14 +389,22 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
             return out;
         };
 
-        if(operation === 'erosion') newBinary = erode(binary);
-        else if(operation === 'dilation') newBinary = dilate(binary);
-        else if(operation === 'opening') newBinary = dilate(erode(binary));
-        else if(operation === 'closing') newBinary = erode(dilate(binary));
+        // Execute Pipeline
+        let currentBin = binary;
+        for (let i = 0; i < openingIters; i++) currentBin = dilate(erode(currentBin));
+        for (let i = 0; i < closingIters; i++) currentBin = erode(dilate(currentBin));
+        for (let i = 0; i < erosionIters; i++) currentBin = erode(currentBin);
+        for (let i = 0; i < dilationIters; i++) currentBin = dilate(currentBin);
 
-        updateResultCanvasAndMetrics(newBinary, minX, minY, maxX, maxY);
-        setStatusText(`Morphology '${operation}' applied.`);
+        updateResultCanvasAndMetrics(currentBin, minX, minY, maxX, maxY);
     };
+
+    // Effect for Morphology changed -> re-run pipeline
+    useEffect(() => {
+        if (seeds.length > 0) {
+            applyMorphologyPipeline();
+        }
+    }, [erosionIters, dilationIters, openingIters, closingIters]);
 
     // Actions
     const handleUndoSeed = () => {
@@ -431,6 +414,7 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
             if(newSeeds.length === 0) {
                 const resCtx = getCtx(resultCanvasRef);
                 resCtx.clearRect(0,0,512,512);
+                baseBinaryRef.current = null;
                 resetRadiomics();
                 setStatusText('ลบจุด Seed ทั้งหมดแล้ว กรุณาเลือกจุดใหม่');
             } else {
@@ -443,6 +427,7 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
         setPoints([]);
         setSeeds([]);
         setSegmentationStep(0);
+        baseBinaryRef.current = null;
         const resCtx = getCtx(resultCanvasRef);
         resCtx.clearRect(0,0,512,512);
         resetRadiomics();
@@ -454,6 +439,13 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
         setPoints([]);
         setSeeds([]);
         setSegmentationStep(0);
+        setBrightness(0);
+        setContrast(0);
+        setErosionIters(0);
+        setDilationIters(0);
+        setOpeningIters(0);
+        setClosingIters(0);
+        baseBinaryRef.current = null;
         resetRadiomics();
         const ctx = getCtx(originalCanvasRef);
         ctx.clearRect(0,0,512,512);
@@ -518,17 +510,24 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
             <div className="panel p-5">
                 <div className="flex items-center gap-3 mb-4 border-b border-hc-light/30 pb-3">
                     <div className="bg-hc-cream text-hc-green w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">02</div>
-                    <h2 className="text-lg font-serif font-bold text-hc-dark uppercase tracking-wide">Enhancement</h2>
+                    <h2 className="text-lg font-serif font-bold text-hc-dark uppercase tracking-wide">Enhancement Window</h2>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                    <button onClick={applyContrast} disabled={!image} className="bg-white border border-hc-light/50 text-hc-dark text-xs py-3 px-2 rounded-xl font-bold uppercase tracking-wider hover:bg-hc-cream hover:border-hc-green hover:text-hc-green transition-all shadow-sm active:scale-[0.98] flex flex-col items-center gap-2 disabled:opacity-50 disabled:pointer-events-none">
-                        <i className="fas fa-adjust text-lg"></i>
-                        Soft Contrast
-                    </button>
-                    <button onClick={applyEqualization} disabled={!image} className="bg-white border border-hc-light/50 text-hc-dark text-xs py-3 px-2 rounded-xl font-bold uppercase tracking-wider hover:bg-hc-cream hover:border-hc-green hover:text-hc-green transition-all shadow-sm active:scale-[0.98] flex flex-col items-center gap-2 disabled:opacity-50 disabled:pointer-events-none">
-                        <i className="fas fa-chart-bar text-lg"></i>
-                        Equalization
-                    </button>
+                <div className="space-y-4 pt-2">
+                    <div className="bg-hc-cream/30 p-3 rounded-xl border border-hc-light/20">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-xs font-bold uppercase text-hc-dark">Brightness</label>
+                            <span className="text-xs font-bold bg-white px-2 py-1 rounded text-hc-green shadow-sm border border-hc-light/20">{brightness > 0 ? '+'+brightness : brightness}</span>
+                        </div>
+                        <input type="range" min="-100" max="100" value={brightness} onChange={(e)=>setBrightness(parseInt(e.target.value))} className="w-full" disabled={!image} />
+                    </div>
+                    
+                    <div className="bg-hc-cream/30 p-3 rounded-xl border border-hc-light/20">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-xs font-bold uppercase text-hc-dark">Contrast</label>
+                            <span className="text-xs font-bold bg-white px-2 py-1 rounded text-hc-green shadow-sm border border-hc-light/20">{contrast > 0 ? '+'+contrast : contrast}</span>
+                        </div>
+                        <input type="range" min="-100" max="100" value={contrast} onChange={(e)=>setContrast(parseInt(e.target.value))} className="w-full" disabled={!image} />
+                    </div>
                 </div>
             </div>
 
@@ -558,12 +557,47 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase text-hc-light tracking-widest px-2">Morphological Ops (Active)</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button onClick={()=>applyMorphology('erosion')} disabled={seeds.length===0} className="border border-hc-light/40 py-2 rounded-lg text-xs font-bold text-hc-dark hover:bg-hc-cream hover:text-hc-green transition-all shadow-sm disabled:opacity-50">Erosion</button>
-                            <button onClick={()=>applyMorphology('dilation')} disabled={seeds.length===0} className="border border-hc-light/40 py-2 rounded-lg text-xs font-bold text-hc-dark hover:bg-hc-cream hover:text-hc-green transition-all shadow-sm disabled:opacity-50">Dilation</button>
-                            <button onClick={()=>applyMorphology('opening')} disabled={seeds.length===0} className="border border-hc-light/40 py-2 rounded-lg text-xs font-bold text-hc-dark hover:bg-hc-cream hover:text-hc-green transition-all shadow-sm disabled:opacity-50">Opening</button>
-                            <button onClick={()=>applyMorphology('closing')} disabled={seeds.length===0} className="border border-hc-light/40 py-2 rounded-lg text-xs font-bold text-hc-dark hover:bg-hc-cream hover:text-hc-green transition-all shadow-sm disabled:opacity-50">Closing</button>
+                        <label className="text-[10px] font-bold uppercase text-hc-light tracking-widest px-2">Morphological Pipeline</label>
+                        <div className="grid grid-cols-1 gap-1">
+                            {/* Erosion Setup */}
+                            <div className="flex justify-between items-center bg-white border border-hc-light/40 py-1.5 px-3 rounded-lg shadow-sm">
+                                <span className="text-xs font-bold text-hc-dark">Erosion</span>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={()=>setErosionIters(Math.max(0, erosionIters-1))} disabled={erosionIters===0 || seeds.length===0} className="w-6 h-6 flex items-center justify-center bg-hc-cream rounded text-hc-dark hover:bg-white border border-hc-light/30 disabled:opacity-50"><i className="fas fa-minus text-[10px]"></i></button>
+                                    <span className="text-xs font-bold w-4 text-center">{erosionIters}</span>
+                                    <button onClick={()=>setErosionIters(erosionIters+1)} disabled={seeds.length===0} className="w-6 h-6 flex items-center justify-center bg-hc-cream rounded text-hc-dark hover:bg-white border border-hc-light/30 disabled:opacity-50"><i className="fas fa-plus text-[10px]"></i></button>
+                                </div>
+                            </div>
+
+                            {/* Dilation Setup */}
+                            <div className="flex justify-between items-center bg-white border border-hc-light/40 py-1.5 px-3 rounded-lg shadow-sm">
+                                <span className="text-xs font-bold text-hc-dark">Dilation</span>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={()=>setDilationIters(Math.max(0, dilationIters-1))} disabled={dilationIters===0 || seeds.length===0} className="w-6 h-6 flex items-center justify-center bg-hc-cream rounded text-hc-dark hover:bg-white border border-hc-light/30 disabled:opacity-50"><i className="fas fa-minus text-[10px]"></i></button>
+                                    <span className="text-xs font-bold w-4 text-center">{dilationIters}</span>
+                                    <button onClick={()=>setDilationIters(dilationIters+1)} disabled={seeds.length===0} className="w-6 h-6 flex items-center justify-center bg-hc-cream rounded text-hc-dark hover:bg-white border border-hc-light/30 disabled:opacity-50"><i className="fas fa-plus text-[10px]"></i></button>
+                                </div>
+                            </div>
+
+                            {/* Opening Setup */}
+                            <div className="flex justify-between items-center bg-white border border-hc-light/40 py-1.5 px-3 rounded-lg shadow-sm">
+                                <span className="text-xs font-bold text-hc-dark">Opening</span>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={()=>setOpeningIters(Math.max(0, openingIters-1))} disabled={openingIters===0 || seeds.length===0} className="w-6 h-6 flex items-center justify-center bg-hc-cream rounded text-hc-dark hover:bg-white border border-hc-light/30 disabled:opacity-50"><i className="fas fa-minus text-[10px]"></i></button>
+                                    <span className="text-xs font-bold w-4 text-center">{openingIters}</span>
+                                    <button onClick={()=>setOpeningIters(openingIters+1)} disabled={seeds.length===0} className="w-6 h-6 flex items-center justify-center bg-hc-cream rounded text-hc-dark hover:bg-white border border-hc-light/30 disabled:opacity-50"><i className="fas fa-plus text-[10px]"></i></button>
+                                </div>
+                            </div>
+
+                            {/* Closing Setup */}
+                            <div className="flex justify-between items-center bg-white border border-hc-light/40 py-1.5 px-3 rounded-lg shadow-sm">
+                                <span className="text-xs font-bold text-hc-dark">Closing</span>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={()=>setClosingIters(Math.max(0, closingIters-1))} disabled={closingIters===0 || seeds.length===0} className="w-6 h-6 flex items-center justify-center bg-hc-cream rounded text-hc-dark hover:bg-white border border-hc-light/30 disabled:opacity-50"><i className="fas fa-minus text-[10px]"></i></button>
+                                    <span className="text-xs font-bold w-4 text-center">{closingIters}</span>
+                                    <button onClick={()=>setClosingIters(closingIters+1)} disabled={seeds.length===0} className="w-6 h-6 flex items-center justify-center bg-hc-cream rounded text-hc-dark hover:bg-white border border-hc-light/30 disabled:opacity-50"><i className="fas fa-plus text-[10px]"></i></button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
