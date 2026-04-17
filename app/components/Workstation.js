@@ -17,6 +17,7 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
         area: 0, circularity: 0, meanDensity: 0, heterogeneity: 0
     });
     const [probability, setProbability] = useState(0); // Local quick probability
+    const [aiEngine, setAiEngine] = useState('gemini'); // Added for Engine Selection
 
     // Refs
     const fileInputRef = useRef(null);
@@ -471,8 +472,8 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
 
     // Handle Deep AI Analysis trigger
     const triggerAnalysis = () => {
-        if (!image || seeds.length === 0) {
-            setStatusText('กรุณาวาด ROI และ Seed เพื่อ segment ก่อนวิเคราะห์!');
+        if (!image) {
+            setStatusText('กรุณาอัพโหลดภาพ CT Scan ก่อนเริ่มวิเคราะห์!');
             return;
         }
 
@@ -481,7 +482,8 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
 
         onAnalyze({
             image: imageDataUrl,
-            radiomics: radiomicsFeatures
+            radiomics: radiomicsFeatures,
+            engine: aiEngine
         });
     };
 
@@ -649,7 +651,8 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
                     <p className="text-[10px] uppercase tracking-widest opacity-60 mt-1">LungCare Radiomics AI Engine</p>
                 </div>
 
-                <div className="p-6 flex-1 flex flex-col gap-6">
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <div className="p-6 flex-1 overflow-y-auto flex flex-col gap-6 custom-scrollbar">
                     
                     {/* Local Probability Banner */}
                     <div className="flex flex-col gap-2">
@@ -695,24 +698,9 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
                         </div>
                     </div>
 
-                    {/* Action Button for NextJS AI Backend */}
-                    <div className="mt-auto">
-                        <button 
-                            onClick={triggerAnalysis}
-                            disabled={isLoading || seeds.length === 0}
-                            className="w-full bg-hc-dark text-white font-serif text-sm uppercase tracking-widest py-4 rounded-xl shadow-lg hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
-                        >
-                            {isLoading ? (
-                                <><i className="fas fa-circle-notch fa-spin"></i> Analyzing with Cloud AI...</>
-                            ) : (
-                                <>Generate AI Report <i className="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i></>
-                            )}
-                        </button>
-                    </div>
-
                     {/* Cloud AI Results Display */}
                     {results && (
-                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white border border-hc-green/40 p-4 rounded-xl shadow-md relative overflow-hidden">
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white border border-hc-green/40 p-4 rounded-xl shadow-md relative overflow-hidden mb-6">
                             <div className="absolute top-0 right-0 p-3 opacity-10">
                                 <i className="fas fa-robot text-5xl"></i>
                             </div>
@@ -731,7 +719,44 @@ export default function Workstation({ onAnalyze, isLoading, results }) {
                             </ul>
                         </div>
                     )}
+                    </div>
 
+                    {/* Fixed Action Footer */}
+                    <div className="p-6 pt-4 border-t border-hc-light/10 bg-white/50 backdrop-blur-sm flex flex-col gap-4">
+                        {/* AI Engine Selection */}
+                        <div className="bg-white rounded-xl p-4 border border-hc-light/20 flex flex-col gap-2 shadow-sm">
+                            <label className="text-[10px] font-bold uppercase text-hc-light tracking-widest flex items-center gap-2 mb-1">
+                                <i className="fas fa-microchip"></i> AI Analysis Engine
+                            </label>
+                            <div className="flex bg-hc-cream/30 p-1 rounded-lg">
+                                <button
+                                    onClick={() => setAiEngine('local')}
+                                    className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${aiEngine === 'local' ? 'bg-hc-dark text-white shadow-md' : 'text-hc-light hover:text-hc-dark'}`}
+                                >
+                                    Local AI
+                                </button>
+                                <button
+                                    onClick={() => setAiEngine('gemini')}
+                                    className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${aiEngine === 'gemini' ? 'bg-hc-green text-white shadow-md' : 'text-hc-light hover:text-hc-dark'}`}
+                                >
+                                    Cloud AI
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Action Button */}
+                        <button 
+                            onClick={triggerAnalysis}
+                            disabled={isLoading || !image}
+                            className="w-full bg-hc-dark text-white font-serif text-sm uppercase tracking-widest py-4 rounded-xl shadow-lg hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
+                        >
+                            {isLoading ? (
+                                <><i className="fas fa-circle-notch fa-spin"></i> Analyzing...</>
+                            ) : (
+                                <>Generate Report <i className="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i></>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

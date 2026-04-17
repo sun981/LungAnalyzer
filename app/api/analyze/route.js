@@ -1,11 +1,34 @@
 export async function POST(request) {
   try {
-    const { image, featureData } = await request.json();
+    const { image, featureData, engine } = await request.json();
 
     if (!image) {
       return Response.json({ error: 'No image provided' }, { status: 400 });
     }
 
+    // ----------------------------------------------------
+    // LOCAL AI (HuggingFace Python Backend) Route
+    // ----------------------------------------------------
+    if (engine === 'local') {
+      console.log('Routing to Local Python AI at http://localhost:8000/predict');
+      
+      const localResponse = await fetch('http://127.0.0.1:8000/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: image }),
+      });
+
+      if (!localResponse.ok) {
+        throw new Error(`Local Python API error: ${localResponse.statusText}`);
+      }
+
+      const localData = await localResponse.json();
+      return Response.json(localData);
+    }
+
+    // ----------------------------------------------------
+    // CLOUD AI (Gemini) Route (Default)
+    // ----------------------------------------------------
     // Prepare features string
     let featureText = '';
     if (featureData) {
@@ -68,21 +91,51 @@ ${featureText}
     });
 
     if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.statusText}`);
+        let errorMsg = `Gemini API error: ${response.statusText}`;
+        try {
+            const errorData = await response.json();
+            errorMsg = `Gemini API error (${response.status}): ${JSON.stringify(errorData)}`;
+        } catch (e) {
+            // ignore parse error if response is not json
+        }
+        throw new Error(errorMsg);
     }
 
     const data = await response.json();
-    let resultJson = {};
+    
+    // Validate response structure
+    if (!data.candidates || data.candidates.length === 0) {
+        console.error('Gemini error response:', data);
+        if (data.promptFeedback && data.promptFeedback.blockReason) {
+          throw new Error(`Gemini blocked the request: ${data.promptFeedback.blockReason}`);
+        }
+        throw new Error("Gemini returned no candidates (possibly blocked by safety filters)");
+    }
 
-    if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
-        resultJson = JSON.parse(data.candidates[0].content.parts[0].text);
-    } else {
-        throw new Error("Invalid response format from Gemini");
+    const candidate = data.candidates[0];
+    if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+        throw new Error(`Gemini failed to finish normally: ${candidate.finishReason}`);
+    }
+
+    if (!candidate.content || !candidate.content.parts || !candidate.content.parts[0].text) {
+        throw new Error("Invalid response content from Gemini");
+    }
+
+    let resultJson = {};
+    try {
+        resultJson = JSON.parse(candidate.content.parts[0].text);
+    } catch (parseError) {
+        console.error('Failed to parse Gemini output:', candidate.content.parts[0].text);
+        throw new Error("Gemini output was not valid JSON");
     }
 
     return Response.json(resultJson);
   } catch (error) {
-    console.error('Analysis error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error('SERVER ANALYSIS ERROR:', error);
+    return Response.json({ 
+        error: "Analysis Failed",
+        details: error.message,
+        suggestion: "กรุณาลองใหม่อีกครั้ง หรือสลับไปใช้ Local AI แทน"
+    }, { status: 500 });
   }
 }

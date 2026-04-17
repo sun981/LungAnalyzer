@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🏥 LungCare AI Workstation (LungAnalyzer)
 
-## Getting Started
+**LungCare AI Workstation** คือระบบช่วยเหลือนักรังสีแพทย์ในการวิเคราะห์ก้อนเนื้อในปอด (Lung Nodule Classification) จากภาพ CT Scan โดยใช้ขุมพลัง AI แบบคู่ขนาน (Dual-Engine) 
 
-First, run the development server:
+## 🌟 จุดเด่นของระบบ
+*   **Dual-Engine AI:** เลือกประมวลผลได้ทั้งผ่าน Cloud (Gemini 3.1 Flash) เพื่อความฉลาดเชิงลึก หรือประมวลผลผ่าน Local AI ในพื้นที่ (HuggingFace) เพื่อความเป็นส่วนตัวสูงสุด (Privacy)
+*   **Radiomics Analysis:** ระบบคำนวณค่าทางคณิตศาสตร์ของก้อนเนื้อให้อัตโนมัติ (Area, Circularity, Density, Heterogeneity)
+*   **Clinical Interface:** หน้าออกแบบตามมาตรฐานสถานีงานแพทย์ (Medical Workstation) ใช้งานง่าย รองรับการวาด Mask และปรับแต่ง Contrast (Windowing)
+*   **Edge Deployment:** รองรับการติดตั้งบนฮาร์ดแวร์ขนาดเล็กอย่าง Raspberry Pi 5 สำหรับใช้ในคลินิกหรือโรงพยาบาล
 
+---
+
+## 🛠 วิธีการติดตั้งและเริ่มใช้งาน (สำหรับเครื่องหลัก)
+
+### 1. หน้าเว็บ (Frontend - Next.js)
 ```bash
+# ติดตั้ง dependencies
+npm install
+
+# รันระบบหน้าเว็บ
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. ระบบ AI หลังบ้าน (Backend - Python)
+ไปที่โฟลเดอร์ `python_backend` และทำตามคู่มือในนั้น:
+*   [อ่านคู่มือการติดตั้ง Backend (ภาษาไทย)](./python_backend/README.md)
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🏗 สถาปัตยกรรม (Architecture)
+*   **Frontend:** Next.js 14, Tailwind CSS, Fabric.js (Canvas Handling)
+*   **Cloud AI Proxy:** API Routes ใน Next.js เชื่อมต่อกับ Google Gemini API
+*   **Local AI Service:** FastAPI (Python) รันโมเดล HuggingFace (PyTorch)
 
-## Learn More
+## 📦 การนำไปใช้งานจริง (Deployment)
+ระบบนี้ถูกออกแบบมาเพื่อรันผ่าน **Docker** ได้ทั้งชุด เพื่อความง่ายในการติดตั้งในคอมพิวเตอร์ของโรงพยาบาล โดยไม่จำเป็นต้องติดตั้ง Python หรือ Node.js ลงในเครื่องโดยตรง
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+> [!IMPORTANT]
+> **Disclaimer:** โปรแกรมนี้ถูกพัฒนาขึ้นเพื่อเป็นเครื่องมือช่วยวิเคราะห์เบื้องต้นและเพื่อการศึกษาเท่านั้น การวินิจฉัยทางการแพทย์ขั้นสุดท้ายต้องกระทำโดยแพทย์ผู้เชี่ยวชาญเสมอ

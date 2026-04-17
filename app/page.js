@@ -16,7 +16,10 @@ export default function Home() {
         body: JSON.stringify(payload),
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Failed to analyze image");
+      if (!resp.ok) {
+        const fullMessage = data.details ? `${data.error}: ${data.details}. ${data.suggestion || ""}` : (data.error || "Failed to analyze image");
+        throw new Error(fullMessage);
+      }
       setResults(data);
     } catch (err) { setError(err.message); } 
     finally { setIsLoading(false); }
