@@ -23,6 +23,19 @@ then
     exit
 fi
 
+# 3. Check for Gemini API Key (.env or .env.local)
+if [ ! -f .env ] && [ ! -f .env.local ]; then
+    echo "[NOTICE] Missing Gemini API Key for Cloud AI!"
+    echo "You can get a free key at: https://aistudio.google.com/app/apikey"
+    read -p "Please paste your Gemini API Key and press Enter: " API_KEY
+    if [ ! -z "$API_KEY" ]; then
+        echo "GEMINI_API_KEY=$API_KEY" > .env
+        echo "[SUCCESS] .env file created with your key."
+    else
+        echo "[WARNING] No key entered. Cloud AI will not work."
+    fi
+fi
+
 echo "[1/3] Installing Website Dependencies..."
 npm install --quiet
 
@@ -44,7 +57,7 @@ echo "---------------------------------------------------"
 echo ""
 
 # Start Backend in background
-source python_backend/venv/activate
+source python_backend/venv/bin/activate 2>/dev/null || source python_backend/venv/Scripts/activate 2>/dev/null
 python3 python_backend/main.py &
 
 # Start Frontend in foreground

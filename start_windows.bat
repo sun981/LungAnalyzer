@@ -1,4 +1,5 @@
 @echo off
+SETLOCAL EnableDelayedExpansion
 TITLE LungCare AI Workstation - Startup
 echo ===================================================
 echo   LungCare AI Workstation: Automatic Startup
@@ -22,6 +23,21 @@ if %errorlevel% neq 0 (
     echo IMPORTANT: Make sure to check "Add Python to PATH" during installation.
     pause
     exit
+)
+
+:: 3. Check for Gemini API Key (.env or .env.local)
+if not exist .env (
+    if not exist .env.local (
+        echo [NOTICE] Missing Gemini API Key for Cloud AI!
+        echo You can get a free key at: https://aistudio.google.com/app/apikey
+        set /p API_KEY="Please paste your Gemini API Key and press Enter: "
+        if not "!API_KEY!"=="" (
+            echo GEMINI_API_KEY=!API_KEY! > .env
+            echo [SUCCESS] .env file created with your key.
+        ) else (
+            echo [WARNING] No key entered. Cloud AI will not work.
+        )
+    )
 )
 
 echo [1/3] Installing Website Dependencies...
